@@ -1,6 +1,6 @@
 {
-  "name": "Cadence — Cross-Platform Social Studio",
-  "description": "Draft tailored LinkedIn, X, and Instagram posts simultaneously from one brief, paired with aspect-ratio-matched studio visuals.",
+  "name": "Kadrant — Cross-Platform Social Studio",
+  "description": "Draft tailored LinkedIn, X, and Instagram posts simultaneously from one brief with real-time Google Search grounding and aspect-ratio-matched studio visuals.",
   "requestFramePermissions": [],
   "majorCapabilities": ["MAJOR_CAPABILITY_SERVER_SIDE_GEMINI_API"]
 }

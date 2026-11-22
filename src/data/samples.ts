@@ -7,8 +7,19 @@ export const SAMPLE_CAMPAIGN: CampaignDraft = {
   tone: 'professional',
   imageSize: '2K',
   imageModel: 'gemini-3-pro-image-preview',
+  useRealTimeData: true,
   createdAt: '2026-11-21T20:15:00.000Z',
   isSample: true,
+  grounding: {
+    summary:
+      'Sample showcase campaign illustrating how Kadrant pairs platform-native copy with live Google Search facts and real-time visual context. Generate a new campaign to pull live web and visual references for your brief.',
+    queries: [
+      'community solar microgrid battery storage trends 2026',
+      'modern architectural timber solar pavilion lighting',
+    ],
+    sources: [],
+    groundedAt: '2026-11-21T20:15:00.000Z',
+  },
   posts: {
     linkedin: {
       platform: 'linkedin',
@@ -33,6 +44,7 @@ If you are planning community developments or municipal grid-edge upgrades for 2
       imageModel: 'gemini-3-pro-image-preview',
       imageUrl: '/src/assets/images/sample_linkedin_microgrid_1795323842864.jpg',
       imageStatus: 'ready',
+      usedRealTimeVisuals: true,
     },
     twitter: {
       platform: 'twitter',
@@ -46,6 +58,7 @@ If you are planning community developments or municipal grid-edge upgrades for 2
       imageModel: 'gemini-3-pro-image-preview',
       imageUrl: '/src/assets/images/sample_twitter_module_1795323841808.jpg',
       imageStatus: 'ready',
+      usedRealTimeVisuals: true,
     },
     instagram: {
       platform: 'instagram',
@@ -70,6 +83,7 @@ Swipe through our architectural pavilion build and see how 40 households share o
       imageModel: 'gemini-3-pro-image-preview',
       imageUrl: '/src/assets/images/sample_instagram_dusk_1795323842512.jpg',
       imageStatus: 'ready',
+      usedRealTimeVisuals: true,
     },
   },
 };
@@ -83,21 +97,21 @@ export interface StarterBrief {
 
 export const STARTER_BRIEFS: StarterBrief[] = [
   {
-    id: 'brief-coffee',
-    label: 'Specialty coffee subscription',
+    id: 'brief-tokyo-transit',
+    label: 'Live weather & city event',
     tone: 'witty',
-    idea: 'Launching a micro-lot single-origin coffee subscription roasted to order every Tuesday morning and shipped in 100% home-compostable tins, aimed at remote teams tired of stale office pods.',
+    idea: 'Announcing our weekend pop-up espresso bar in Shibuya, Tokyo with a visual matching today’s current Tokyo weather and seasonal street atmosphere.',
+  },
+  {
+    id: 'brief-ai-benchmarks',
+    label: 'Current industry trend',
+    tone: 'professional',
+    idea: 'Sharing our engineering team’s analysis of the latest global renewable energy capacity milestones in 2026 and what utility-scale battery storage means for data centers.',
   },
   {
     id: 'brief-security',
     label: 'Zero-trust patch alert',
     tone: 'urgent',
     idea: 'Critical 48-hour upgrade window for our open-source API gateway v4.2 fixing a high-severity OAuth token replay edge case, with zero-downtime migration scripts ready now.',
-  },
-  {
-    id: 'brief-design',
-    label: 'Design systems report',
-    tone: 'professional',
-    idea: 'Releasing our 2026 State of Product Design Systems benchmark covering 140 engineering organizations, showing how tokenized accessibility specs cut QA regression cycles by 42%.',
   },
 ];

@@ -30,7 +30,7 @@ async function startServer() {
 
   app.post('/api/generate-posts', async (req, res) => {
     try {
-      const { idea, tone, aspectRatios } = req.body ?? {};
+      const { idea, tone, aspectRatios, useRealTimeData } = req.body ?? {};
       const validation = validateBrief(typeof idea === 'string' ? idea : '');
       if (!validation.valid) {
         return res.status(400).json({ error: validation.error });
@@ -58,6 +58,7 @@ async function startServer() {
         idea: idea.trim(),
         tone,
         aspectRatios: safeRatios,
+        useRealTimeData: useRealTimeData !== false,
       });
 
       return res.json(result);
@@ -69,7 +70,7 @@ async function startServer() {
 
   app.post('/api/generate-image', async (req, res) => {
     try {
-      const { prompt, aspectRatio, imageSize, model } = req.body ?? {};
+      const { prompt, aspectRatio, imageSize, model, useRealTimeVisuals } = req.body ?? {};
       if (typeof prompt !== 'string' || prompt.trim().length < 5) {
         return res.status(400).json({ error: 'Provide a descriptive visual prompt (at least 5 characters).' });
       }
@@ -89,6 +90,7 @@ async function startServer() {
         aspectRatio,
         imageSize,
         model: resolvedModel,
+        useRealTimeVisuals: useRealTimeVisuals !== false,
       });
 
       return res.json({
@@ -96,6 +98,8 @@ async function startServer() {
         model: result.model,
         aspectRatio,
         imageSize,
+        visualSources: result.visualSources,
+        usedRealTimeVisuals: result.usedRealTimeVisuals,
       });
     } catch (error) {
       const classified = classifyGeminiError(error, 'image');
@@ -119,6 +123,9 @@ async function startServer() {
         return res.status(400).json({ error: 'Provide a refinement instruction.' });
       }
 
+      const resolvedMode =
+        mode === 'analyze' ? 'analyze' : mode === 'ground' ? 'ground' : 'quick_edit';
+
       const result = await refinePlatformPost({
         platform,
         tone,
@@ -126,7 +133,7 @@ async function startServer() {
         currentBody,
         currentHashtags: Array.isArray(currentHashtags) ? currentHashtags : [],
         instruction: instruction.trim(),
-        mode: mode === 'analyze' ? 'analyze' : 'quick_edit',
+        mode: resolvedMode,
       });
 
       return res.json(result);
@@ -151,7 +158,7 @@ async function startServer() {
   }
 
   app.listen(PORT, '0.0.0.0', () => {
-    console.log(`Cadence server listening on http://localhost:${PORT}`);
+    console.log(`Kadrant server listening on http://localhost:${PORT}`);
   });
 }
 

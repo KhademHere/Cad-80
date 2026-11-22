@@ -6,7 +6,9 @@ import {
   DEFAULT_PLATFORM_RATIOS,
   TWITTER_CHAR_LIMIT,
   analyzePostMetrics,
+  dedupeGroundingSources,
   deserializeCampaignsFromStorage,
+  extractSourceHostname,
   formatCampaignForClipboard,
   formatPostForClipboard,
   formatRelativeTimestamp,
@@ -126,6 +128,7 @@ test('formatCampaignForClipboard compiles all three platforms cleanly', () => {
     tone: 'professional',
     imageSize: '2K',
     imageModel: 'gemini-3-pro-image-preview',
+    useRealTimeData: true,
     createdAt: '2026-11-21T20:00:00.000Z',
     posts: {
       linkedin: sampleLinkedInPost,
@@ -149,6 +152,7 @@ test('serializeCampaignsForStorage strips oversized base64 data URLs while keepi
     tone: 'witty',
     imageSize: '4K',
     imageModel: 'gemini-3-pro-image-preview',
+    useRealTimeData: true,
     createdAt: '2026-11-21T20:00:00.000Z',
     posts: {
       linkedin: { ...sampleLinkedInPost, imageUrl: hugeDataUrl },
@@ -163,6 +167,19 @@ test('serializeCampaignsForStorage strips oversized base64 data URLs while keepi
   assert.equal(restored[0].posts.linkedin.imageUrl, null);
   assert.equal(restored[0].posts.linkedin.imageStatus, 'idle');
   assert.equal(restored[0].posts.twitter.imageUrl, '/src/assets/images/test.jpg');
+});
+
+test('dedupeGroundingSources filters invalid URLs, deduplicates, and extracts hostnames', () => {
+  const cleaned = dedupeGroundingSources([
+    { title: 'IEA Report', uri: 'https://www.iea.org/reports/renewables' },
+    { title: 'Duplicate IEA', uri: 'https://www.iea.org/reports/renewables' },
+    { title: 'Bad protocol', uri: 'javascript:alert(1)' },
+    { uri: 'https://example.com/news' },
+  ]);
+  assert.equal(cleaned.length, 2);
+  assert.equal(cleaned[0].title, 'IEA Report');
+  assert.equal(cleaned[1].title, 'example.com');
+  assert.equal(extractSourceHostname('https://www.iea.org/reports/renewables'), 'iea.org');
 });
 
 test('formatRelativeTimestamp returns human-readable elapsed labels', () => {

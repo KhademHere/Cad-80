@@ -1,6 +1,7 @@
 import type {
   AspectRatioOption,
   GeneratePostsResponse,
+  GroundingSource,
   ImageModelOption,
   ImageSizeOption,
   PlatformId,
@@ -34,7 +35,10 @@ async function postJson<T>(url: string, payload: unknown): Promise<T> {
 
   if (!response.ok) {
     const message =
-      (data && typeof data === 'object' && 'error' in data && typeof (data as { error: unknown }).error === 'string'
+      (data &&
+      typeof data === 'object' &&
+      'error' in data &&
+      typeof (data as { error: unknown }).error === 'string'
         ? (data as { error: string }).error
         : null) || `Request failed with status ${response.status}.`;
     throw new ApiClientError(message, response.status);
@@ -47,6 +51,7 @@ export function requestGeneratePosts(params: {
   idea: string;
   tone: ToneOption;
   aspectRatios: Record<PlatformId, AspectRatioOption>;
+  useRealTimeData: boolean;
 }): Promise<GeneratePostsResponse> {
   return postJson<GeneratePostsResponse>('/api/generate-posts', params);
 }
@@ -56,11 +61,14 @@ export function requestGenerateImage(params: {
   aspectRatio: AspectRatioOption;
   imageSize: ImageSizeOption;
   model: ImageModelOption;
+  useRealTimeVisuals: boolean;
 }): Promise<{
   imageUrl: string;
   model: ImageModelOption;
   aspectRatio: AspectRatioOption;
   imageSize: ImageSizeOption;
+  visualSources: GroundingSource[];
+  usedRealTimeVisuals: boolean;
 }> {
   return postJson('/api/generate-image', params);
 }
@@ -72,7 +80,7 @@ export function requestRefinePost(params: {
   currentBody: string;
   currentHashtags: string[];
   instruction: string;
-  mode: 'quick_edit' | 'analyze';
+  mode: 'quick_edit' | 'analyze' | 'ground';
 }): Promise<RefinePostResponse> {
   return postJson<RefinePostResponse>('/api/refine-post', params);
 }

@@ -1,12 +1,17 @@
 import { AlertCircle, Check, Copy, RefreshCw, X } from 'lucide-react';
 import { useEffect, useRef, useState } from 'react';
+import { AmbientBackdrop } from './components/AmbientBackdrop';
 import { ComposerRail } from './components/ComposerRail';
+import { GroundingPanel } from './components/GroundingPanel';
 import { PlatformCard } from './components/PlatformCard';
 import { TopBar } from './components/TopBar';
+import { VisualLightbox } from './components/VisualLightbox';
 import { SAMPLE_CAMPAIGN } from './data/samples';
+import { handleLiquidPointerMove } from './hooks/useLiquidPointer';
 import {
   ALL_PLATFORMS,
   DEFAULT_PLATFORM_RATIOS,
+  dedupeGroundingSources,
   deserializeCampaignsFromStorage,
   formatCampaignForClipboard,
   normalizeHashtags,
@@ -30,7 +35,7 @@ import type {
   WorkspaceView,
 } from './types/campaign';
 
-const STORAGE_KEY = 'cadence_campaigns_v1';
+const STORAGE_KEY = 'kadrant_campaigns_v1';
 
 function loadInitialCampaigns(): CampaignDraft[] {
   if (typeof window === 'undefined') return [SAMPLE_CAMPAIGN];
@@ -45,6 +50,7 @@ export default function App() {
     () => loadInitialCampaigns()[0].id
   );
   const [activeView, setActiveView] = useState<WorkspaceView>('all');
+  const [lightboxPlatform, setLightboxPlatform] = useState<PlatformId | null>(null);
 
   const activeCampaign =
     campaigns.find((c) => c.id === activeCampaignId) ?? campaigns[0];
@@ -53,6 +59,9 @@ export default function App() {
   const [tone, setTone] = useState<ToneOption>(activeCampaign.tone);
   const [imageSize, setImageSize] = useState<ImageSizeOption>(activeCampaign.imageSize);
   const [imageModel, setImageModel] = useState<ImageModelOption>(activeCampaign.imageModel);
+  const [useRealTimeData, setUseRealTimeData] = useState<boolean>(
+    activeCampaign.useRealTimeData !== false
+  );
   const [aspectRatios, setAspectRatios] = useState<Record<PlatformId, AspectRatioOption>>({
     linkedin: activeCampaign.posts.linkedin.aspectRatio,
     twitter: activeCampaign.posts.twitter.aspectRatio,
@@ -109,6 +118,7 @@ export default function App() {
       aspectRatio: AspectRatioOption;
       imageSize: ImageSizeOption;
       model: ImageModelOption;
+      useRealTimeVisuals: boolean;
     }
   ) => {
     updatePlatformPost(campaignId, platform, (post) => ({
@@ -128,6 +138,8 @@ export default function App() {
         imageModel: result.model,
         aspectRatio: result.aspectRatio,
         imageSize: result.imageSize,
+        visualSources: result.visualSources,
+        usedRealTimeVisuals: result.usedRealTimeVisuals,
         imageStatus: 'ready',
         imageError: undefined,
       }));
@@ -172,16 +184,20 @@ export default function App() {
         imageModel,
         imageUrl: null,
         imageStatus: 'loading',
+        usedRealTimeVisuals: useRealTimeData,
       };
     }
 
     const pendingCampaign: CampaignDraft = {
       id: newId,
-      title: 'Drafting campaign...',
+      title: useRealTimeData
+        ? 'Researching live data & drafting...'
+        : 'Drafting campaign...',
       idea: trimmedIdea,
       tone,
       imageSize,
       imageModel,
+      useRealTimeData,
       createdAt: new Date().toISOString(),
       posts: placeholderPosts,
     };
@@ -195,6 +211,7 @@ export default function App() {
         idea: trimmedIdea,
         tone,
         aspectRatios,
+        useRealTimeData,
       });
 
       const hydratedPosts = {} as Record<PlatformId, PlatformPost>;
@@ -211,12 +228,14 @@ export default function App() {
           imageModel,
           imageUrl: null,
           imageStatus: 'loading',
+          usedRealTimeVisuals: useRealTimeData,
         };
       }
 
       updateCampaign(newId, (camp) => ({
         ...camp,
         title: generated.title,
+        grounding: generated.grounding,
         posts: hydratedPosts,
       }));
 
@@ -229,6 +248,7 @@ export default function App() {
             aspectRatio: aspectRatios[platform],
             imageSize,
             model: imageModel,
+            useRealTimeVisuals: useRealTimeData,
           })
         )
       );
@@ -252,6 +272,7 @@ export default function App() {
     setTone(found.tone);
     setImageSize(found.imageSize);
     setImageModel(found.imageModel);
+    setUseRealTimeData(found.useRealTimeData !== false);
     setAspectRatios({
       linkedin: found.posts.linkedin.aspectRatio,
       twitter: found.posts.twitter.aspectRatio,
@@ -284,7 +305,7 @@ export default function App() {
   const handleRefinePost = async (
     platform: PlatformId,
     instruction: string,
-    mode: 'quick_edit' | 'analyze'
+    mode: 'quick_edit' | 'analyze' | 'ground'
   ) => {
     const post = activeCampaign.posts[platform];
     setRefiningPlatform(platform);
@@ -301,13 +322,42 @@ export default function App() {
         mode,
       });
 
-      updatePlatformPost(activeCampaign.id, platform, (prev) => ({
-        ...prev,
-        headline: refined.headline || prev.headline,
-        body: refined.body || prev.body,
-        hashtags: normalizeHashtags(refined.hashtags ?? prev.hashtags),
-        analysisNote: refined.analysisNote,
-      }));
+      updateCampaign(activeCampaign.id, (camp) => {
+        const mergedSources =
+          refined.sources && refined.sources.length > 0
+            ? dedupeGroundingSources([
+                ...(camp.grounding?.sources ?? []),
+                ...refined.sources,
+              ])
+            : camp.grounding?.sources ?? [];
+
+        return {
+          ...camp,
+          grounding:
+            refined.sources && refined.sources.length > 0
+              ? {
+                  summary:
+                    camp.grounding?.summary ||
+                    'Updated with live Google Search verification.',
+                  queries: camp.grounding?.queries ?? [],
+                  sources: mergedSources,
+                  groundedAt: new Date().toISOString(),
+                }
+              : camp.grounding,
+          posts: {
+            ...camp.posts,
+            [platform]: {
+              ...camp.posts[platform],
+              headline: refined.headline || camp.posts[platform].headline,
+              body: refined.body || camp.posts[platform].body,
+              hashtags: normalizeHashtags(
+                refined.hashtags ?? camp.posts[platform].hashtags
+              ),
+              analysisNote: refined.analysisNote,
+            },
+          },
+        };
+      });
     } catch (error) {
       const message =
         error instanceof ApiClientError
@@ -337,6 +387,7 @@ export default function App() {
         aspectRatio: post.aspectRatio,
         imageSize,
         model: imageModel,
+        useRealTimeVisuals: useRealTimeData,
       });
     }
   };
@@ -344,15 +395,21 @@ export default function App() {
   const visiblePlatforms: PlatformId[] =
     activeView === 'all' ? ALL_PLATFORMS : [activeView];
 
+  const lightboxPost = lightboxPlatform
+    ? activeCampaign.posts[lightboxPlatform]
+    : null;
+
   return (
-    <div id="top" className="min-h-screen flex flex-col bg-[#F8F9FB] text-slate-900">
+    <div id="top" className="relative min-h-screen flex flex-col text-slate-950">
+      <AmbientBackdrop />
+
       <TopBar
         activeView={activeView}
         onSelectView={setActiveView}
         onNewBrief={handleNewBrief}
       />
 
-      <div className="flex-1 max-w-[1600px] w-full mx-auto flex flex-col lg:flex-row">
+      <div className="flex-1 max-w-[1640px] w-full mx-auto px-3 sm:px-6 pt-5 pb-10 flex flex-col lg:flex-row gap-6">
         <ComposerRail
           idea={idea}
           onIdeaChange={(val) => {
@@ -387,6 +444,8 @@ export default function App() {
               },
             }));
           }}
+          useRealTimeData={useRealTimeData}
+          onToggleRealTimeData={() => setUseRealTimeData((prev) => !prev)}
           aspectRatios={aspectRatios}
           onAspectRatioChange={(platform, ratio) => {
             setAspectRatios((prev) => ({ ...prev, [platform]: ratio }));
@@ -425,14 +484,14 @@ export default function App() {
           textareaRef={textareaRef}
         />
 
-        <main className="flex-1 min-w-0 p-5 sm:p-6 lg:p-8 space-y-6">
+        <main className="flex-1 min-w-0 space-y-5">
           {/* Active Campaign Editorial Header */}
-          <div className="flex flex-col sm:flex-row sm:items-end justify-between gap-4 pb-5 border-b border-slate-200">
-            <div className="min-w-0 space-y-1">
+          <div className="liquid-glass-panel rounded-[22px] px-5 sm:px-6 py-4 flex flex-col sm:flex-row sm:items-center justify-between gap-4">
+            <div className="relative z-10 min-w-0 space-y-1">
               <h2 className="font-display text-2xl font-semibold tracking-tight text-slate-950 text-balance">
                 {activeCampaign.title}
               </h2>
-              <div className="text-xs text-slate-500 flex flex-wrap items-center gap-x-2 gap-y-1">
+              <div className="text-xs text-slate-600 flex flex-wrap items-center gap-x-2 gap-y-1">
                 <span>
                   <span className="capitalize">{activeCampaign.tone}</span> tone
                 </span>
@@ -444,21 +503,20 @@ export default function App() {
                     ? 'Gemini 3 Pro Image'
                     : 'Nano Banana 2.1'}
                 </span>
-                {activeCampaign.isSample && (
-                  <>
-                    <span aria-hidden="true">·</span>
-                    <span>Sample campaign</span>
-                  </>
-                )}
+                <span aria-hidden="true">·</span>
+                <span>
+                  {useRealTimeData ? 'Live Search grounding' : 'Offline brief only'}
+                </span>
               </div>
             </div>
 
-            <div className="flex items-center gap-2 shrink-0">
+            <div className="relative z-10 flex items-center gap-2 shrink-0">
               <button
                 type="button"
                 onClick={handleRenderAllVisuals}
+                onPointerMove={handleLiquidPointerMove}
                 disabled={isGeneratingPosts}
-                className="inline-flex items-center gap-1.5 px-3.5 py-2 text-xs font-medium text-slate-700 hover:text-slate-950 bg-white hover:bg-slate-50 border border-slate-200 rounded-lg transition-colors whitespace-nowrap cursor-pointer disabled:opacity-50"
+                className="liquid-glass-btn inline-flex items-center gap-1.5 px-3.5 py-2 text-xs font-semibold text-slate-800 hover:text-slate-950 rounded-full whitespace-nowrap cursor-pointer disabled:opacity-50"
               >
                 <RefreshCw className="w-3.5 h-3.5" aria-hidden="true" />
                 Render All Visuals
@@ -466,8 +524,9 @@ export default function App() {
               <button
                 type="button"
                 onClick={handleCopyAll}
+                onPointerMove={handleLiquidPointerMove}
                 disabled={isGeneratingPosts}
-                className="inline-flex items-center gap-1.5 px-3.5 py-2 text-xs font-medium text-slate-900 bg-white hover:bg-slate-50 border border-slate-200 rounded-lg transition-colors whitespace-nowrap cursor-pointer disabled:opacity-50"
+                className="liquid-glass-btn inline-flex items-center gap-1.5 px-3.5 py-2 text-xs font-semibold text-slate-950 rounded-full whitespace-nowrap cursor-pointer disabled:opacity-50"
               >
                 {copiedAll ? (
                   <>
@@ -476,7 +535,7 @@ export default function App() {
                   </>
                 ) : (
                   <>
-                    <Copy className="w-3.5 h-3.5 text-slate-500" aria-hidden="true" />
+                    <Copy className="w-3.5 h-3.5 text-slate-600" aria-hidden="true" />
                     Copy All
                   </>
                 )}
@@ -484,11 +543,19 @@ export default function App() {
             </div>
           </div>
 
+          {/* Live Google Search Grounding Sources Strip */}
+          {activeCampaign.grounding && !isGeneratingPosts && (
+            <GroundingPanel
+              grounding={activeCampaign.grounding}
+              isSample={activeCampaign.isSample}
+            />
+          )}
+
           {/* Workspace Error Alert */}
           {workspaceError && (
             <div
               role="alert"
-              className="rounded-xl border border-red-200 bg-red-50/80 px-4 py-3 text-sm text-red-900 flex items-start justify-between gap-3"
+              className="rounded-[20px] border border-red-300/80 bg-red-50/85 backdrop-blur-md px-4 py-3 text-sm text-red-950 shadow-sm flex items-start justify-between gap-3"
             >
               <div className="flex items-start gap-2.5">
                 <AlertCircle
@@ -501,7 +568,7 @@ export default function App() {
                 type="button"
                 onClick={() => setWorkspaceError(null)}
                 aria-label="Dismiss error message"
-                className="p-1 text-red-500 hover:text-red-800 cursor-pointer shrink-0"
+                className="p-1 text-red-600 hover:text-red-900 cursor-pointer shrink-0"
               >
                 <X className="w-4 h-4" aria-hidden="true" />
               </button>
@@ -557,8 +624,10 @@ export default function App() {
                       aspectRatio: post.aspectRatio,
                       imageSize,
                       model: imageModel,
+                      useRealTimeVisuals: useRealTimeData,
                     })
                   }
+                  onInspectVisual={() => setLightboxPlatform(platform)}
                   onRefinePost={(instruction, mode) =>
                     void handleRefinePost(platform, instruction, mode)
                   }
@@ -579,6 +648,28 @@ export default function App() {
           </section>
         </main>
       </div>
+
+      <VisualLightbox
+        post={lightboxPost}
+        onClose={() => setLightboxPlatform(null)}
+        onUpdateImagePrompt={(imagePrompt) => {
+          if (!lightboxPlatform) return;
+          updatePlatformPost(activeCampaign.id, lightboxPlatform, (prev) => ({
+            ...prev,
+            imagePrompt,
+          }));
+        }}
+        onRegenerate={() => {
+          if (!lightboxPlatform || !lightboxPost) return;
+          void triggerSingleImageRender(activeCampaign.id, lightboxPlatform, {
+            prompt: lightboxPost.imagePrompt,
+            aspectRatio: lightboxPost.aspectRatio,
+            imageSize,
+            model: imageModel,
+            useRealTimeVisuals: useRealTimeData,
+          });
+        }}
+      />
     </div>
   );
 }

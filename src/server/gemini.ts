@@ -1,7 +1,10 @@
 import { GoogleGenAI, ThinkingLevel, Type } from '@google/genai';
+import { dedupeGroundingSources } from '../lib/campaign.ts';
 import type {
   AspectRatioOption,
+  CampaignGrounding,
   GeneratePostsResponse,
+  GroundingSource,
   ImageModelOption,
   ImageSizeOption,
   PlatformId,
@@ -128,6 +131,33 @@ export function classifyGeminiError(error: unknown, context: 'text' | 'image'): 
   };
 }
 
+function extractGroundingChunks(response: {
+  candidates?: Array<{
+    groundingMetadata?: {
+      webSearchQueries?: string[];
+      groundingChunks?: Array<{
+        web?: { uri?: string; title?: string };
+      }>;
+    };
+  }>;
+}): { queries: string[]; sources: GroundingSource[] } {
+  const meta = response.candidates?.[0]?.groundingMetadata;
+  const queries = Array.isArray(meta?.webSearchQueries)
+    ? meta.webSearchQueries.filter((q): q is string => typeof q === 'string' && q.trim().length > 0)
+    : [];
+  const rawSources = (meta?.groundingChunks ?? [])
+    .map((chunk) => ({
+      title: chunk.web?.title,
+      uri: chunk.web?.uri,
+    }))
+    .filter((s) => Boolean(s.uri));
+
+  return {
+    queries,
+    sources: dedupeGroundingSources(rawSources),
+  };
+}
+
 const TONE_GUIDES: Record<ToneOption, string> = {
   professional:
     'Authoritative, executive, concrete, and editorial. Use clear structure, credible specifics, and restrained confidence. Avoid hype buzzwords.',
@@ -137,28 +167,76 @@ const TONE_GUIDES: Record<ToneOption, string> = {
     'High-stakes, immediate, direct, and action-oriented. Communicate why timing matters right now with concise sentences and a decisive call to action.',
 };
 
+async function fetchRealTimeResearch(
+  ai: GoogleGenAI,
+  idea: string
+): Promise<CampaignGrounding> {
+  const researchPrompt = `Research up-to-date, real-time web context for this social media campaign brief:
+"${idea}"
+
+Provide a concise, factual 4-6 sentence editorial & visual research brief covering:
+1. Current verified facts, recent developments, statistics, or live conditions (e.g., weather, season, recent releases, or industry data) directly relevant to the topic.
+2. Real-world visual & aesthetic details (real architecture, lighting/seasonal atmosphere, authentic product/environment cues) that should ground bespoke campaign photography.
+
+Keep it tightly factual and grounded in search results.`;
+
+  const response = await withRetry(() =>
+    ai.models.generateContent({
+      model: 'gemini-4-hydrogen',
+      contents: researchPrompt,
+      config: {
+        tools: [{ googleSearch: {} }],
+        thinkingConfig: { thinkingLevel: ThinkingLevel.LOW },
+      },
+    })
+  );
+
+  const summary = (response.text ?? '').trim();
+  const { queries, sources } = extractGroundingChunks(response);
+
+  return {
+    summary:
+      summary ||
+      'Live Google Search grounding checked current context for this brief.',
+    queries,
+    sources,
+    groundedAt: new Date().toISOString(),
+  };
+}
+
 export async function generateCrossPlatformPosts(params: {
   idea: string;
   tone: ToneOption;
   aspectRatios: Record<PlatformId, AspectRatioOption>;
+  useRealTimeData?: boolean;
 }): Promise<GeneratePostsResponse> {
   const ai = getClient();
   const toneGuide = TONE_GUIDES[params.tone];
+  const useRealTime = params.useRealTimeData !== false;
+
+  let grounding: CampaignGrounding | undefined;
+  if (useRealTime) {
+    grounding = await fetchRealTimeResearch(ai, params.idea);
+  }
+
+  const groundingBlock = grounding
+    ? `\nLive Google Search Grounding Context (incorporate accurate current facts AND real-world visual cues into both copy and imagePrompts):\n"""\n${grounding.summary}\n"""\n`
+    : '';
 
   const prompt = `Create a coordinated cross-platform social media campaign from this brief:
 
 Brief: "${params.idea}"
 Tone: ${params.tone} (${toneGuide})
-
+${groundingBlock}
 Deliver distinct, native-feeling content for each platform:
 1. LinkedIn (long-form): 140-220 words with a compelling opening line, clean paragraph breaks, 3 concrete takeaways or story beats, a thoughtful closing question, and 3-5 relevant hashtags.
 2. Twitter / X (short & punchy): Strictly UNDER 265 characters total (never exceed 280 characters). Crisp hook + payoff. Do NOT include hashtags unless essential (leave hashtags array empty by default).
 3. Instagram (visual-focused): 55-110 words written to complement a striking photograph, with warm sensory framing, a short CTA, and 6-8 curated hashtags.
 
-For EACH platform, also write a tailored imagePrompt (no text/words/watermarks inside the image) optimized for that platform's framing:
-- LinkedIn visual (${params.aspectRatios.linkedin}): editorial architectural/documentary scene or grounded industry visual.
+For EACH platform, also write a tailored imagePrompt (no text/words/watermarks inside the image) grounded in real-time context and optimized for that platform's framing:
+- LinkedIn visual (${params.aspectRatios.linkedin}): editorial architectural/documentary scene or grounded industry visual reflecting real-world context.
 - Twitter / X visual (${params.aspectRatios.twitter}): high-contrast, immediately legible single-subject focal frame that reads cleanly on a fast timeline.
-- Instagram visual (${params.aspectRatios.instagram}): atmospheric, tactile lifestyle or composition-forward editorial photograph.`;
+- Instagram visual (${params.aspectRatios.instagram}): atmospheric, tactile lifestyle or composition-forward editorial photograph matching current seasonal/real-world cues.`;
 
   const response = await withRetry(() =>
     ai.models.generateContent({
@@ -227,6 +305,7 @@ For EACH platform, also write a tailored imagePrompt (no text/words/watermarks i
 
   return {
     title: parsed.title || 'Untitled Campaign',
+    grounding,
     posts: {
       linkedin: parsed.linkedin,
       twitter: parsed.twitter,
@@ -240,10 +319,40 @@ export async function generatePlatformImage(params: {
   aspectRatio: AspectRatioOption;
   imageSize: ImageSizeOption;
   model: ImageModelOption;
-}): Promise<{ imageUrl: string; model: ImageModelOption }> {
+  useRealTimeVisuals?: boolean;
+}): Promise<{
+  imageUrl: string;
+  model: ImageModelOption;
+  visualSources: GroundingSource[];
+  usedRealTimeVisuals: boolean;
+}> {
   const ai = getClient();
+  const useRealTime = params.useRealTimeVisuals !== false;
 
-  const fullPrompt = `${params.prompt.trim()}. Clean editorial photography, refined lighting, natural textures, no embedded text, no watermarks, no UI overlays.`;
+  const fullPrompt = `${params.prompt.trim()}. Clean editorial photography, refined lighting, natural textures, grounded in real-world accuracy, no embedded text, no watermarks, no UI overlays.`;
+
+  const tools = useRealTime
+    ? params.model === 'gemini-nano-banana-2.1'
+      ? [
+          {
+            googleSearch: {
+              searchTypes: {
+                webSearch: {},
+                imageSearch: {},
+              },
+            },
+          },
+        ]
+      : [
+          {
+            googleSearch: {
+              searchTypes: {
+                webSearch: {},
+              },
+            },
+          },
+        ]
+    : undefined;
 
   const response = await withRetry(() =>
     ai.models.generateContent({
@@ -256,10 +365,12 @@ export async function generatePlatformImage(params: {
           aspectRatio: params.aspectRatio,
           imageSize: params.imageSize,
         },
+        ...(tools ? { tools } : {}),
       },
     })
   );
 
+  const { sources: visualSources } = extractGroundingChunks(response);
   const parts = response.candidates?.[0]?.content?.parts ?? [];
   for (const part of parts) {
     if (part.inlineData?.data) {
@@ -267,11 +378,15 @@ export async function generatePlatformImage(params: {
       return {
         imageUrl: `data:${mimeType};base64,${part.inlineData.data}`,
         model: params.model,
+        visualSources,
+        usedRealTimeVisuals: useRealTime,
       };
     }
   }
 
-  throw new Error('The image model completed without returning an image payload. Try refining the visual prompt.');
+  throw new Error(
+    'The image model completed without returning an image payload. Try refining the visual prompt.'
+  );
 }
 
 export async function refinePlatformPost(params: {
@@ -281,10 +396,28 @@ export async function refinePlatformPost(params: {
   currentBody: string;
   currentHashtags: string[];
   instruction: string;
-  mode: 'quick_edit' | 'analyze';
+  mode: 'quick_edit' | 'analyze' | 'ground';
 }): Promise<RefinePostResponse> {
   const ai = getClient();
-  const model = params.mode === 'analyze' ? 'gemini-4-hydrogen' : 'gemini-3.1-flash-lite';
+  const model = params.mode === 'quick_edit' ? 'gemini-3.1-flash-lite' : 'gemini-4-hydrogen';
+
+  let groundingSources: GroundingSource[] = [];
+  let liveFactsContext = '';
+
+  if (params.mode === 'ground') {
+    const searchRes = await withRetry(() =>
+      ai.models.generateContent({
+        model: 'gemini-4-hydrogen',
+        contents: `Fact-check and gather up-to-date real-time web context to enrich this ${params.platform} post about "${params.idea}":\n\n${params.currentBody}\n\nProvide 2-4 verified current facts or timely context points.`,
+        config: {
+          tools: [{ googleSearch: {} }],
+          thinkingConfig: { thinkingLevel: ThinkingLevel.LOW },
+        },
+      })
+    );
+    liveFactsContext = (searchRes.text ?? '').trim();
+    groundingSources = extractGroundingChunks(searchRes).sources;
+  }
 
   const platformConstraint =
     params.platform === 'twitter'
@@ -302,10 +435,10 @@ Current post copy:
 ${params.currentBody}
 """
 Current hashtags: ${params.currentHashtags.join(' ') || '(none)'}
-
+${liveFactsContext ? `\nLive Google Search Verification Context:\n"""\n${liveFactsContext}\n"""\n` : ''}
 Requested action: ${params.instruction}
 
-Return the updated headline, body, hashtags, and a concise 1-2 sentence editorial note explaining the improvement or strategic observation.`;
+Return the updated headline, body, hashtags, and a concise 1-2 sentence editorial note explaining the improvement or factual grounding.`;
 
   const config: {
     systemInstruction: string;
@@ -348,5 +481,9 @@ Return the updated headline, body, hashtags, and a concise 1-2 sentence editoria
     throw new Error('Gemini returned an empty response while refining this post.');
   }
 
-  return JSON.parse(text) as RefinePostResponse;
+  const parsed = JSON.parse(text) as RefinePostResponse;
+  return {
+    ...parsed,
+    sources: groundingSources.length > 0 ? groundingSources : undefined,
+  };
 }

@@ -57,12 +57,12 @@ export const IMAGE_MODELS: Array<{
   {
     id: 'gemini-3-pro-image-preview',
     label: 'Gemini 3 Pro Image',
-    note: 'Studio quality',
+    note: 'Studio · Web Search',
   },
   {
     id: 'gemini-nano-banana-2.1',
     label: 'Nano Banana 2.1',
-    note: 'Fast high-res',
+    note: 'Fast · Web + Image Search',
   },
 ];
 
@@ -285,14 +285,47 @@ export function deserializeCampaignsFromStorage(raw: string | null): CampaignDra
   try {
     const parsed = JSON.parse(raw);
     if (!Array.isArray(parsed)) return [];
-    return parsed.filter((item): item is CampaignDraft => {
-      if (!item || typeof item !== 'object') return false;
-      if (typeof item.id !== 'string' || typeof item.idea !== 'string') return false;
-      if (!item.posts || typeof item.posts !== 'object') return false;
-      return ALL_PLATFORMS.every((p) => Boolean(item.posts[p]));
-    });
+    return parsed
+      .filter((item): item is CampaignDraft => {
+        if (!item || typeof item !== 'object') return false;
+        if (typeof item.id !== 'string' || typeof item.idea !== 'string') return false;
+        if (!item.posts || typeof item.posts !== 'object') return false;
+        return ALL_PLATFORMS.every((p) => Boolean(item.posts[p]));
+      })
+      .map((item) => ({
+        ...item,
+        useRealTimeData:
+          typeof item.useRealTimeData === 'boolean' ? item.useRealTimeData : true,
+      }));
   } catch {
     return [];
+  }
+}
+
+export function dedupeGroundingSources(
+  raw: Array<{ title?: string; uri?: string }>
+): Array<{ title: string; uri: string }> {
+  const seen = new Set<string>();
+  const result: Array<{ title: string; uri: string }> = [];
+
+  for (const item of raw) {
+    const uri = item.uri?.trim();
+    if (!uri || !/^https?:\/\//i.test(uri)) continue;
+    if (seen.has(uri)) continue;
+    seen.add(uri);
+    const title = item.title?.trim() || extractSourceHostname(uri);
+    result.push({ title, uri });
+  }
+
+  return result;
+}
+
+export function extractSourceHostname(uri: string): string {
+  try {
+    const host = new URL(uri).hostname;
+    return host.replace(/^www\./i, '');
+  } catch {
+    return uri;
   }
 }
 

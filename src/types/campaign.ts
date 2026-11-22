@@ -20,6 +20,18 @@ export type ImageModelOption =
 
 export type WorkspaceView = 'all' | PlatformId;
 
+export interface GroundingSource {
+  title: string;
+  uri: string;
+}
+
+export interface CampaignGrounding {
+  summary: string;
+  queries: string[];
+  sources: GroundingSource[];
+  groundedAt: string;
+}
+
 export interface PlatformPost {
   platform: PlatformId;
   headline: string;
@@ -32,6 +44,8 @@ export interface PlatformPost {
   imageUrl: string | null;
   imageStatus: 'idle' | 'loading' | 'ready' | 'error';
   imageError?: string;
+  visualSources?: GroundingSource[];
+  usedRealTimeVisuals?: boolean;
   analysisNote?: string;
 }
 
@@ -42,6 +56,8 @@ export interface CampaignDraft {
   tone: ToneOption;
   imageSize: ImageSizeOption;
   imageModel: ImageModelOption;
+  useRealTimeData: boolean;
+  grounding?: CampaignGrounding;
   createdAt: string;
   isSample?: boolean;
   posts: Record<PlatformId, PlatformPost>;
@@ -49,6 +65,7 @@ export interface CampaignDraft {
 
 export interface GeneratePostsResponse {
   title: string;
+  grounding?: CampaignGrounding;
   posts: Record<
     PlatformId,
     {
@@ -65,4 +82,5 @@ export interface RefinePostResponse {
   body: string;
   hashtags: string[];
   analysisNote?: string;
+  sources?: GroundingSource[];
 }
