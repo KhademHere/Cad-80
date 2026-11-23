@@ -1,6 +1,5 @@
-import { handleLiquidPointerMove } from '../hooks/useLiquidPointer';
+import { Plus } from 'lucide-react';
 import type { WorkspaceView } from '../types/campaign';
-import { GlassSegmentedTrack } from './GlassSegmentedTrack';
 
 interface TopBarProps {
   activeView: WorkspaceView;
@@ -17,60 +16,61 @@ const NAV_ITEMS: Array<{ id: WorkspaceView; label: string }> = [
 
 export function TopBar({ activeView, onSelectView, onNewBrief }: TopBarProps) {
   return (
-    <header className="sticky top-2.5 sm:top-3 z-30 px-3 sm:px-6 pointer-events-none">
-      <div className="max-w-[1640px] mx-auto pointer-events-auto">
-        <div className="liquid-glass-dock rounded-[24px] md:rounded-full px-4 sm:px-5 py-2">
-          <span aria-hidden="true" className="liquid-refract-underlay" />
+    <header className="sticky top-0 z-30 h-14 md:h-16 bg-[#FAF2F8]/95 backdrop-blur-sm border-b border-[#D3BCC0]">
+      <div className="h-full max-w-[1440px] mx-auto px-4 sm:px-6 lg:px-8 flex items-center justify-between gap-8">
+        {/* Zone 1: Single-element Brand Wordmark */}
+        <a
+          href="#top"
+          onClick={(e) => {
+            e.preventDefault();
+            onSelectView('all');
+          }}
+          className="font-display text-xl font-bold tracking-tight text-[#0E103D] whitespace-nowrap shrink-0 rounded-md py-1"
+        >
+          Kadrant
+        </a>
 
-          <div className="relative z-10 flex items-center justify-between gap-4 sm:gap-8">
-            {/* Zone 1: Single-element Brand Wordmark */}
-            <a
-              href="#top"
-              onClick={(e) => {
-                e.preventDefault();
-                onSelectView('all');
-              }}
-              className="font-display text-lg font-bold tracking-tight text-slate-950 whitespace-nowrap shrink-0 pl-1 focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-blue-700 rounded-md"
-            >
-              Kadrant
-            </a>
-
-            {/* Zone 2: Floating Liquid Glass Tab Dock with Spring Sliding Capsule */}
-            <div className="hidden md:block">
-              <GlassSegmentedTrack
-                as="nav"
-                ariaLabel="Platform views"
-                options={NAV_ITEMS}
-                value={activeView}
-                onChange={onSelectView}
-              />
-            </div>
-
-            {/* Zone 3: Glossy Obsidian Glass Droplet Primary Action */}
-            <div className="flex items-center shrink-0">
+        {/* Zone 2: Clean Typography Navigation Links (Desktop) */}
+        <nav
+          aria-label="Platform views"
+          className="hidden md:flex items-center gap-7 h-full"
+        >
+          {NAV_ITEMS.map((item) => {
+            const isActive = activeView === item.id;
+            return (
               <button
+                key={item.id}
                 type="button"
-                onClick={onNewBrief}
-                onPointerMove={handleLiquidPointerMove}
-                className="liquid-glass-btn-obsidian px-4 py-1.5 sm:py-2 text-xs sm:text-[13px] font-semibold text-white rounded-full whitespace-nowrap shrink-0 cursor-pointer focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-offset-2 focus-visible:ring-blue-700"
+                onClick={() => onSelectView(item.id)}
+                aria-current={isActive ? 'page' : undefined}
+                className={`relative h-full min-h-[44px] inline-flex items-center px-1 text-sm whitespace-nowrap shrink-0 cursor-pointer transition-colors ${
+                  isActive
+                    ? 'text-[#69306D] font-bold'
+                    : 'text-[#3A2A54] font-medium hover:text-[#0E103D]'
+                }`}
               >
-                New Brief
+                <span>{item.label}</span>
+                {isActive && (
+                  <span
+                    aria-hidden="true"
+                    className="absolute bottom-0 inset-x-0 h-[3px] rounded-t-full bg-[#69306D]"
+                  />
+                )}
               </button>
-            </div>
-          </div>
+            );
+          })}
+        </nav>
 
-          {/* Compact Mobile Glass Tab Strip */}
-          <div className="relative z-10 md:hidden mt-2 pt-2 border-t liquid-divider overflow-x-auto">
-            <GlassSegmentedTrack
-              as="nav"
-              ariaLabel="Mobile platform views"
-              options={NAV_ITEMS}
-              value={activeView}
-              onChange={onSelectView}
-              size="sm"
-              className="w-max"
-            />
-          </div>
+        {/* Zone 3: Single Header Action */}
+        <div className="flex items-center shrink-0">
+          <button
+            type="button"
+            onClick={onNewBrief}
+            className="btn-secondary min-h-[40px] px-4 py-2 rounded-xl text-sm font-semibold inline-flex items-center gap-1.5 whitespace-nowrap shrink-0 cursor-pointer"
+          >
+            <Plus className="w-4 h-4 text-[#69306D]" aria-hidden="true" />
+            <span>New Brief</span>
+          </button>
         </div>
       </div>
     </header>

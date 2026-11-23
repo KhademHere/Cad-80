@@ -1,13 +1,13 @@
 import { AlertCircle, Check, Copy, RefreshCw, X } from 'lucide-react';
-import { useEffect, useRef, useState } from 'react';
-import { AmbientBackdrop } from './components/AmbientBackdrop';
+import { useCallback, useEffect, useRef, useState } from 'react';
 import { ComposerRail } from './components/ComposerRail';
 import { GroundingPanel } from './components/GroundingPanel';
+import { MobileBottomNav } from './components/MobileBottomNav';
 import { PlatformCard } from './components/PlatformCard';
+import { ToastBanner, type ToastMessage } from './components/ToastBanner';
 import { TopBar } from './components/TopBar';
 import { VisualLightbox } from './components/VisualLightbox';
 import { SAMPLE_CAMPAIGN } from './data/samples';
-import { handleLiquidPointerMove } from './hooks/useLiquidPointer';
 import {
   ALL_PLATFORMS,
   DEFAULT_PLATFORM_RATIOS,
@@ -73,8 +73,29 @@ export default function App() {
   const [isGeneratingPosts, setIsGeneratingPosts] = useState(false);
   const [refiningPlatform, setRefiningPlatform] = useState<PlatformId | null>(null);
   const [copiedAll, setCopiedAll] = useState(false);
+  const [toast, setToast] = useState<ToastMessage | null>(null);
 
   const textareaRef = useRef<HTMLTextAreaElement | null>(null);
+  const toastTimerRef = useRef<number | null>(null);
+
+  const showToast = useCallback((text: string, toneMode: 'success' | 'info' = 'success') => {
+    if (toastTimerRef.current) {
+      window.clearTimeout(toastTimerRef.current);
+    }
+    setToast({ id: Date.now(), text, tone: toneMode });
+    toastTimerRef.current = window.setTimeout(() => {
+      setToast(null);
+      toastTimerRef.current = null;
+    }, 3200);
+  }, []);
+
+  useEffect(() => {
+    return () => {
+      if (toastTimerRef.current) {
+        window.clearTimeout(toastTimerRef.current);
+      }
+    };
+  }, []);
 
   useEffect(() => {
     try {
@@ -131,15 +152,19 @@ export default function App() {
     }));
 
     try {
-      const result = await requestGenerateImage(params);
+      const result = await requestGenerateImage({
+        prompt: params.prompt,
+        aspectRatio: params.aspectRatio,
+        imageSize: params.imageSize,
+        model: params.model,
+        useRealTimeVisuals: params.useRealTimeVisuals,
+      });
+
       updatePlatformPost(campaignId, platform, (post) => ({
         ...post,
         imageUrl: result.imageUrl,
         imageModel: result.model,
-        aspectRatio: result.aspectRatio,
-        imageSize: result.imageSize,
         visualSources: result.visualSources,
-        usedRealTimeVisuals: result.usedRealTimeVisuals,
         imageStatus: 'ready',
         imageError: undefined,
       }));
@@ -147,7 +172,7 @@ export default function App() {
       const message =
         error instanceof ApiClientError
           ? error.message
-          : 'Failed to generate image for this platform.';
+          : 'Failed to generate image. Please try again.';
       updatePlatformPost(campaignId, platform, (post) => ({
         ...post,
         imageStatus: 'error',
@@ -159,7 +184,7 @@ export default function App() {
   const handleGenerateCampaign = async () => {
     const validation = validateBrief(idea);
     if (!validation.valid) {
-      setBriefError(validation.error);
+      setBriefError(validation.error ?? 'Please enter a valid campaign brief.');
       textareaRef.current?.focus();
       return;
     }
@@ -168,84 +193,75 @@ export default function App() {
     setWorkspaceError(null);
     setIsGeneratingPosts(true);
 
-    const newId = `camp-${Date.now()}`;
-    const trimmedIdea = idea.trim();
-
-    const placeholderPosts = {} as Record<PlatformId, PlatformPost>;
-    for (const platform of ALL_PLATFORMS) {
-      placeholderPosts[platform] = {
-        platform,
-        headline: '',
-        body: '',
-        hashtags: [],
-        imagePrompt: '',
-        aspectRatio: aspectRatios[platform],
-        imageSize,
-        imageModel,
-        imageUrl: null,
-        imageStatus: 'loading',
-        usedRealTimeVisuals: useRealTimeData,
-      };
-    }
-
-    const pendingCampaign: CampaignDraft = {
-      id: newId,
-      title: useRealTimeData
-        ? 'Researching live data & drafting...'
-        : 'Drafting campaign...',
-      idea: trimmedIdea,
-      tone,
-      imageSize,
-      imageModel,
-      useRealTimeData,
-      createdAt: new Date().toISOString(),
-      posts: placeholderPosts,
-    };
-
-    const previousId = activeCampaign.id;
-    setCampaigns((prev) => [pendingCampaign, ...prev]);
-    setActiveCampaignId(newId);
-
     try {
-      const generated = await requestGeneratePosts({
-        idea: trimmedIdea,
+      const response = await requestGeneratePosts({
+        idea: idea.trim(),
         tone,
         aspectRatios,
         useRealTimeData,
       });
 
-      const hydratedPosts = {} as Record<PlatformId, PlatformPost>;
-      for (const platform of ALL_PLATFORMS) {
-        const draftPost = generated.posts[platform];
-        hydratedPosts[platform] = {
-          platform,
-          headline: draftPost.headline,
-          body: draftPost.body,
-          hashtags: normalizeHashtags(draftPost.hashtags ?? []),
-          imagePrompt: draftPost.imagePrompt,
-          aspectRatio: aspectRatios[platform],
-          imageSize,
-          imageModel,
-          imageUrl: null,
-          imageStatus: 'loading',
-          usedRealTimeVisuals: useRealTimeData,
-        };
-      }
+      const newId = `campaign-${Date.now()}`;
+      const newCampaign: CampaignDraft = {
+        id: newId,
+        title: response.title,
+        idea: idea.trim(),
+        tone,
+        imageSize,
+        imageModel,
+        useRealTimeData,
+        grounding: response.grounding,
+        createdAt: new Date().toISOString(),
+        posts: {
+          linkedin: {
+            platform: 'linkedin',
+            headline: response.posts.linkedin.headline,
+            body: response.posts.linkedin.body,
+            hashtags: normalizeHashtags(response.posts.linkedin.hashtags),
+            imagePrompt: response.posts.linkedin.imagePrompt,
+            aspectRatio: aspectRatios.linkedin,
+            imageSize,
+            imageModel,
+            imageUrl: null,
+            imageStatus: 'loading',
+          },
+          twitter: {
+            platform: 'twitter',
+            headline: response.posts.twitter.headline,
+            body: response.posts.twitter.body,
+            hashtags: normalizeHashtags(response.posts.twitter.hashtags),
+            imagePrompt: response.posts.twitter.imagePrompt,
+            aspectRatio: aspectRatios.twitter,
+            imageSize,
+            imageModel,
+            imageUrl: null,
+            imageStatus: 'loading',
+          },
+          instagram: {
+            platform: 'instagram',
+            headline: response.posts.instagram.headline,
+            body: response.posts.instagram.body,
+            hashtags: normalizeHashtags(response.posts.instagram.hashtags),
+            imagePrompt: response.posts.instagram.imagePrompt,
+            aspectRatio: aspectRatios.instagram,
+            imageSize,
+            imageModel,
+            imageUrl: null,
+            imageStatus: 'loading',
+          },
+        },
+      };
 
-      updateCampaign(newId, (camp) => ({
-        ...camp,
-        title: generated.title,
-        grounding: generated.grounding,
-        posts: hydratedPosts,
-      }));
-
+      setCampaigns((prev) => [newCampaign, ...prev].slice(0, 12));
+      setActiveCampaignId(newId);
       setIsGeneratingPosts(false);
+      showToast('Drafted LinkedIn, X, and Instagram posts. Rendering visuals...', 'info');
 
-      await Promise.allSettled(
+      await Promise.all(
         ALL_PLATFORMS.map((platform) =>
           triggerSingleImageRender(newId, platform, {
-            prompt: hydratedPosts[platform].imagePrompt,
-            aspectRatio: aspectRatios[platform],
+            prompt: newCampaign.posts[platform].imagePrompt,
+            aspectRatio: newCampaign.posts[platform].aspectRatio,
             imageSize,
             model: imageModel,
             useRealTimeVisuals: useRealTimeData,
@@ -253,92 +269,69 @@ export default function App() {
         )
       );
     } catch (error) {
-      setIsGeneratingPosts(false);
       const message =
         error instanceof ApiClientError
           ? error.message
-          : 'Unable to draft campaign posts right now. Please try again.';
+          : 'Could not generate campaign drafts. Please retry.';
       setWorkspaceError(message);
-      setCampaigns((prev) => prev.filter((c) => c.id !== newId));
-      setActiveCampaignId(previousId);
+      setIsGeneratingPosts(false);
     }
   };
 
-  const handleSelectCampaign = (id: string) => {
-    const found = campaigns.find((c) => c.id === id);
-    if (!found) return;
-    setActiveCampaignId(found.id);
-    setIdea(found.idea);
-    setTone(found.tone);
-    setImageSize(found.imageSize);
-    setImageModel(found.imageModel);
-    setUseRealTimeData(found.useRealTimeData !== false);
-    setAspectRatios({
-      linkedin: found.posts.linkedin.aspectRatio,
-      twitter: found.posts.twitter.aspectRatio,
-      instagram: found.posts.instagram.aspectRatio,
-    });
-    setBriefError(null);
+  const handleRenderAllVisuals = async () => {
     setWorkspaceError(null);
+    showToast('Rendering updated visuals for all 3 platforms...', 'info');
+    await Promise.all(
+      ALL_PLATFORMS.map((platform) => {
+        const post = activeCampaign.posts[platform];
+        return triggerSingleImageRender(activeCampaign.id, platform, {
+          prompt: post.imagePrompt,
+          aspectRatio: post.aspectRatio,
+          imageSize,
+          model: imageModel,
+          useRealTimeVisuals: useRealTimeData,
+        });
+      })
+    );
   };
 
-  const handleDeleteCampaign = (id: string) => {
-    setCampaigns((prev) => {
-      if (prev.length <= 1) return prev;
-      const next = prev.filter((c) => c.id !== id);
-      if (id === activeCampaignId && next.length > 0) {
-        setActiveCampaignId(next[0].id);
-        setIdea(next[0].idea);
-        setTone(next[0].tone);
-      }
-      return next;
-    });
-  };
-
-  const handleNewBrief = () => {
-    setIdea('');
-    setBriefError(null);
-    setWorkspaceError(null);
-    textareaRef.current?.focus();
-  };
-
-  const handleRefinePost = async (
+  const handleRefinePlatform = async (
     platform: PlatformId,
     instruction: string,
     mode: 'quick_edit' | 'analyze' | 'ground'
   ) => {
-    const post = activeCampaign.posts[platform];
+    const targetPost = activeCampaign.posts[platform];
     setRefiningPlatform(platform);
     setWorkspaceError(null);
 
     try {
-      const refined = await requestRefinePost({
+      const result = await requestRefinePost({
         platform,
         tone: activeCampaign.tone,
         idea: activeCampaign.idea,
-        currentBody: post.body,
-        currentHashtags: post.hashtags,
+        currentBody: targetPost.body,
+        currentHashtags: targetPost.hashtags,
         instruction,
         mode,
       });
 
       updateCampaign(activeCampaign.id, (camp) => {
         const mergedSources =
-          refined.sources && refined.sources.length > 0
+          result.sources && result.sources.length > 0
             ? dedupeGroundingSources([
                 ...(camp.grounding?.sources ?? []),
-                ...refined.sources,
+                ...result.sources,
               ])
             : camp.grounding?.sources ?? [];
 
         return {
           ...camp,
           grounding:
-            refined.sources && refined.sources.length > 0
+            result.sources && result.sources.length > 0
               ? {
                   summary:
-                    camp.grounding?.summary ||
-                    'Updated with live Google Search verification.',
+                    camp.grounding?.summary ??
+                    'Fact-checked with live Google Search.',
                   queries: camp.grounding?.queries ?? [],
                   sources: mergedSources,
                   groundedAt: new Date().toISOString(),
@@ -348,47 +341,87 @@ export default function App() {
             ...camp.posts,
             [platform]: {
               ...camp.posts[platform],
-              headline: refined.headline || camp.posts[platform].headline,
-              body: refined.body || camp.posts[platform].body,
-              hashtags: normalizeHashtags(
-                refined.hashtags ?? camp.posts[platform].hashtags
-              ),
-              analysisNote: refined.analysisNote,
+              headline: result.headline || camp.posts[platform].headline,
+              body: result.body,
+              hashtags: normalizeHashtags(result.hashtags),
+              analysisNote: result.analysisNote,
             },
           },
         };
       });
+      showToast('Updated draft with editorial refinement.');
     } catch (error) {
       const message =
         error instanceof ApiClientError
           ? error.message
-          : 'Could not refine this draft right now.';
+          : 'Refinement failed. Please try again.';
       setWorkspaceError(message);
     } finally {
       setRefiningPlatform(null);
     }
   };
 
+  const handleSelectCampaign = (id: string) => {
+    const selected = campaigns.find((c) => c.id === id);
+    if (!selected) return;
+    setActiveCampaignId(selected.id);
+    setIdea(selected.idea);
+    setTone(selected.tone);
+    setImageSize(selected.imageSize);
+    setImageModel(selected.imageModel);
+    setUseRealTimeData(selected.useRealTimeData !== false);
+    setAspectRatios({
+      linkedin: selected.posts.linkedin.aspectRatio,
+      twitter: selected.posts.twitter.aspectRatio,
+      instagram: selected.posts.instagram.aspectRatio,
+    });
+    setBriefError(null);
+    setWorkspaceError(null);
+    showToast(`Loaded "${selected.title}"`, 'info');
+  };
+
+  const handleDeleteCampaign = (id: string) => {
+    if (campaigns.length <= 1) return;
+    const removed = campaigns.find((c) => c.id === id);
+    const remaining = campaigns.filter((c) => c.id !== id);
+    setCampaigns(remaining);
+    if (activeCampaignId === id && remaining.length > 0) {
+      const next = remaining[0];
+      setActiveCampaignId(next.id);
+      setIdea(next.idea);
+      setTone(next.tone);
+      setImageSize(next.imageSize);
+      setImageModel(next.imageModel);
+      setUseRealTimeData(next.useRealTimeData !== false);
+      setAspectRatios({
+        linkedin: next.posts.linkedin.aspectRatio,
+        twitter: next.posts.twitter.aspectRatio,
+        instagram: next.posts.instagram.aspectRatio,
+      });
+    }
+    if (removed) {
+      showToast(`Deleted "${removed.title}"`, 'info');
+    }
+  };
+
+  const handleNewBrief = () => {
+    setIdea('');
+    setBriefError(null);
+    setWorkspaceError(null);
+    setActiveView('all');
+    textareaRef.current?.focus();
+    textareaRef.current?.scrollIntoView({ behavior: 'smooth', block: 'center' });
+    showToast('Ready for a new campaign brief.', 'info');
+  };
+
   const handleCopyAll = async () => {
     try {
       await navigator.clipboard.writeText(formatCampaignForClipboard(activeCampaign));
       setCopiedAll(true);
+      showToast('Copied all 3 platform drafts to clipboard.');
       window.setTimeout(() => setCopiedAll(false), 1800);
     } catch {
-      // Ignore clipboard unavailability
-    }
-  };
-
-  const handleRenderAllVisuals = () => {
-    for (const platform of ALL_PLATFORMS) {
-      const post = activeCampaign.posts[platform];
-      void triggerSingleImageRender(activeCampaign.id, platform, {
-        prompt: post.imagePrompt,
-        aspectRatio: post.aspectRatio,
-        imageSize,
-        model: imageModel,
-        useRealTimeVisuals: useRealTimeData,
-      });
+      // Ignore clipboard failures in restricted frames
     }
   };
 
@@ -400,8 +433,13 @@ export default function App() {
     : null;
 
   return (
-    <div id="top" className="relative min-h-screen flex flex-col text-slate-950">
-      <AmbientBackdrop />
+    <div id="top" className="min-h-screen flex flex-col bg-[#F2D7EE] text-[#0E103D] pb-20 md:pb-0">
+      <a
+        href="#main-workspace"
+        className="sr-only focus:not-sr-only focus:fixed focus:top-3 focus:left-3 focus:z-50 focus:px-4 focus:py-2.5 focus:rounded-xl focus:bg-[#0E103D] focus:text-[#F2D7EE] focus:text-sm focus:font-semibold"
+      >
+        Skip to campaign drafts
+      </a>
 
       <TopBar
         activeView={activeView}
@@ -409,7 +447,7 @@ export default function App() {
         onNewBrief={handleNewBrief}
       />
 
-      <div className="flex-1 max-w-[1640px] w-full mx-auto px-3 sm:px-6 pt-5 pb-10 flex flex-col lg:flex-row gap-6">
+      <div className="flex-1 max-w-[1440px] w-full mx-auto px-4 sm:px-6 lg:px-8 py-6 lg:py-8 flex flex-col lg:flex-row gap-6 lg:gap-8">
         <ComposerRail
           idea={idea}
           onIdeaChange={(val) => {
@@ -473,6 +511,7 @@ export default function App() {
                 },
               },
             }));
+            showToast('Aspect ratios reset to platform defaults.', 'info');
           }}
           briefError={briefError}
           isGenerating={isGeneratingPosts}
@@ -481,19 +520,20 @@ export default function App() {
           activeCampaignId={activeCampaign.id}
           onSelectCampaign={handleSelectCampaign}
           onDeleteCampaign={handleDeleteCampaign}
+          onLoadSampleBrief={(label) => showToast(`Loaded "${label}" sample brief.`, 'info')}
           textareaRef={textareaRef}
         />
 
-        <main className="flex-1 min-w-0 space-y-5">
+        <main id="main-workspace" className="flex-1 min-w-0 space-y-6">
           {/* Active Campaign Editorial Header */}
-          <div className="liquid-glass-panel rounded-[22px] px-5 sm:px-6 py-4 flex flex-col sm:flex-row sm:items-center justify-between gap-4">
-            <div className="relative z-10 min-w-0 space-y-1">
-              <h2 className="font-display text-2xl font-semibold tracking-tight text-slate-950 text-balance">
+          <div className="brand-card rounded-2xl px-5 sm:px-6 py-5 flex flex-col sm:flex-row sm:items-center justify-between gap-4">
+            <div className="min-w-0 space-y-1.5">
+              <h2 className="font-display text-2xl sm:text-[26px] font-bold tracking-tight text-[#0E103D] leading-[1.2] text-balance">
                 {activeCampaign.title}
               </h2>
-              <div className="text-xs text-slate-600 flex flex-wrap items-center gap-x-2 gap-y-1">
+              <div className="text-xs text-[#3A2A54] flex flex-wrap items-center gap-x-2 gap-y-1">
                 <span>
-                  <span className="capitalize">{activeCampaign.tone}</span> tone
+                  <span className="capitalize font-medium">{activeCampaign.tone}</span> tone
                 </span>
                 <span aria-hidden="true">·</span>
                 <span className="font-mono tabular-nums">{imageSize} resolution</span>
@@ -510,33 +550,31 @@ export default function App() {
               </div>
             </div>
 
-            <div className="relative z-10 flex items-center gap-2 shrink-0">
+            <div className="flex flex-wrap items-center gap-2.5 shrink-0">
               <button
                 type="button"
                 onClick={handleRenderAllVisuals}
-                onPointerMove={handleLiquidPointerMove}
                 disabled={isGeneratingPosts}
-                className="liquid-glass-btn inline-flex items-center gap-1.5 px-3.5 py-2 text-xs font-semibold text-slate-800 hover:text-slate-950 rounded-full whitespace-nowrap cursor-pointer disabled:opacity-50"
+                className="btn-secondary min-h-[40px] inline-flex items-center gap-1.5 px-4 py-2 text-xs font-semibold rounded-xl whitespace-nowrap cursor-pointer"
               >
-                <RefreshCw className="w-3.5 h-3.5" aria-hidden="true" />
-                Render All Visuals
+                <RefreshCw className="w-3.5 h-3.5 text-[#69306D]" aria-hidden="true" />
+                <span>Render All Visuals</span>
               </button>
               <button
                 type="button"
                 onClick={handleCopyAll}
-                onPointerMove={handleLiquidPointerMove}
                 disabled={isGeneratingPosts}
-                className="liquid-glass-btn inline-flex items-center gap-1.5 px-3.5 py-2 text-xs font-semibold text-slate-950 rounded-full whitespace-nowrap cursor-pointer disabled:opacity-50"
+                className="btn-secondary min-h-[40px] inline-flex items-center gap-1.5 px-4 py-2 text-xs font-semibold rounded-xl whitespace-nowrap cursor-pointer"
               >
                 {copiedAll ? (
                   <>
-                    <Check className="w-3.5 h-3.5 text-emerald-700" aria-hidden="true" />
-                    Copied All
+                    <Check className="w-4 h-4 text-[#69306D]" aria-hidden="true" />
+                    <span>Copied All</span>
                   </>
                 ) : (
                   <>
-                    <Copy className="w-3.5 h-3.5 text-slate-600" aria-hidden="true" />
-                    Copy All
+                    <Copy className="w-3.5 h-3.5 text-[#69306D]" aria-hidden="true" />
+                    <span>Copy All</span>
                   </>
                 )}
               </button>
@@ -555,22 +593,23 @@ export default function App() {
           {workspaceError && (
             <div
               role="alert"
-              className="rounded-[20px] border border-red-300/80 bg-red-50/85 backdrop-blur-md px-4 py-3 text-sm text-red-950 shadow-sm flex items-start justify-between gap-3"
+              className="rounded-2xl border-[1.5px] border-[#69306D] bg-[#FAF2F8] px-5 py-4 text-sm text-[#0E103D] shadow-sm flex items-start justify-between gap-3"
             >
-              <div className="flex items-start gap-2.5">
+              <div className="flex items-start gap-3">
                 <AlertCircle
-                  className="w-4 h-4 text-red-600 shrink-0 mt-0.5"
+                  className="w-5 h-5 text-[#69306D] shrink-0 mt-0.5"
                   aria-hidden="true"
                 />
-                <p className="text-xs sm:text-sm leading-relaxed">{workspaceError}</p>
+                <p className="text-sm font-medium leading-relaxed">{workspaceError}</p>
               </div>
               <button
                 type="button"
                 onClick={() => setWorkspaceError(null)}
                 aria-label="Dismiss error message"
-                className="p-1 text-red-600 hover:text-red-900 cursor-pointer shrink-0"
+                title="Dismiss error message"
+                className="btn-ghost min-w-[36px] min-h-[36px] inline-flex items-center justify-center rounded-lg shrink-0 cursor-pointer"
               >
-                <X className="w-4 h-4" aria-hidden="true" />
+                <X className="w-4 h-4 text-[#0E103D]" aria-hidden="true" />
               </button>
             </div>
           )}
@@ -605,10 +644,10 @@ export default function App() {
                       hashtags,
                     }))
                   }
-                  onUpdateImagePrompt={(imagePrompt) =>
+                  onUpdateImagePrompt={(prompt) =>
                     updatePlatformPost(activeCampaign.id, platform, (prev) => ({
                       ...prev,
-                      imagePrompt,
+                      imagePrompt: prompt,
                     }))
                   }
                   onChangeAspectRatio={(ratio) => {
@@ -619,7 +658,7 @@ export default function App() {
                     }));
                   }}
                   onRegenerateImage={() =>
-                    void triggerSingleImageRender(activeCampaign.id, platform, {
+                    triggerSingleImageRender(activeCampaign.id, platform, {
                       prompt: post.imagePrompt,
                       aspectRatio: post.aspectRatio,
                       imageSize,
@@ -629,7 +668,7 @@ export default function App() {
                   }
                   onInspectVisual={() => setLightboxPlatform(platform)}
                   onRefinePost={(instruction, mode) =>
-                    void handleRefinePost(platform, instruction, mode)
+                    handleRefinePlatform(platform, instruction, mode)
                   }
                   onDismissAnalysis={() =>
                     updatePlatformPost(activeCampaign.id, platform, (prev) => ({
@@ -638,10 +677,9 @@ export default function App() {
                     }))
                   }
                   onFocusPlatform={
-                    activeView === 'all'
-                      ? () => setActiveView(platform)
-                      : undefined
+                    activeView === 'all' ? () => setActiveView(platform) : undefined
                   }
+                  onCopiedPost={(name) => showToast(`Copied ${name} post to clipboard.`)}
                 />
               );
             })}
@@ -649,19 +687,26 @@ export default function App() {
         </main>
       </div>
 
+      {/* Ergonomic Mobile Thumb-Zone Bottom Navigation */}
+      <MobileBottomNav activeView={activeView} onSelectView={setActiveView} />
+
+      {/* Non-Blocking Feedback Toast */}
+      <ToastBanner toast={toast} onDismiss={() => setToast(null)} />
+
+      {/* High-Resolution Visual Inspector Modal */}
       <VisualLightbox
         post={lightboxPost}
         onClose={() => setLightboxPlatform(null)}
-        onUpdateImagePrompt={(imagePrompt) => {
+        onUpdateImagePrompt={(prompt) => {
           if (!lightboxPlatform) return;
           updatePlatformPost(activeCampaign.id, lightboxPlatform, (prev) => ({
             ...prev,
-            imagePrompt,
+            imagePrompt: prompt,
           }));
         }}
         onRegenerate={() => {
           if (!lightboxPlatform || !lightboxPost) return;
-          void triggerSingleImageRender(activeCampaign.id, lightboxPlatform, {
+          triggerSingleImageRender(activeCampaign.id, lightboxPlatform, {
             prompt: lightboxPost.imagePrompt,
             aspectRatio: lightboxPost.aspectRatio,
             imageSize,

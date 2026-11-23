@@ -1,5 +1,6 @@
 import {
   AlertCircle,
+  AlertTriangle,
   Check,
   ChevronDown,
   ChevronUp,
@@ -15,8 +16,6 @@ import {
   ZoomIn,
 } from 'lucide-react';
 import { useEffect, useState } from 'react';
-import { handleLiquidPointerMove } from '../hooks/useLiquidPointer';
-import { GlassSegmentedTrack } from './GlassSegmentedTrack';
 import {
   ALL_ASPECT_RATIOS,
   ASPECT_RATIO_META,
@@ -42,8 +41,8 @@ interface PlatformCardProps {
   onRefinePost: (instruction: string, mode: 'quick_edit' | 'analyze' | 'ground') => void;
   onDismissAnalysis: () => void;
   onFocusPlatform?: () => void;
+  onCopiedPost?: (platformName: string) => void;
 }
-
 
 const QUICK_REFINEMENTS = [
   {
@@ -88,6 +87,7 @@ export function PlatformCard({
   onRefinePost,
   onDismissAnalysis,
   onFocusPlatform,
+  onCopiedPost,
 }: PlatformCardProps) {
   const [copied, setCopied] = useState(false);
   const [promptOpen, setPromptOpen] = useState(false);
@@ -115,6 +115,7 @@ export function PlatformCard({
     try {
       await navigator.clipboard.writeText(formatPostForClipboard(post));
       setCopied(true);
+      onCopiedPost?.(spec.name);
       window.setTimeout(() => setCopied(false), 1800);
     } catch {
       // Clipboard API may be unavailable in restricted contexts
@@ -141,31 +142,31 @@ export function PlatformCard({
   };
 
   const visualSection = (
-    <div className="space-y-3">
-      {/* Full-Bleed Aspect-Ratio Visual Stage */}
+    <div className="space-y-3.5">
+      {/* Aspect-Ratio Visual Stage */}
       <div
         className={`relative overflow-hidden ${
           isFocused
-            ? 'rounded-[18px] bg-slate-900/5 ring-1 ring-white/60'
+            ? 'rounded-xl bg-[#0E103D] border border-[#D3BCC0]'
             : isPortraitRatio
-              ? 'bg-gradient-to-b from-white/40 via-blue-100/25 to-white/25 border-b liquid-divider py-3 px-4'
-              : 'bg-slate-900/[0.04] border-b liquid-divider'
+              ? 'bg-[#EDDDE9] border-b brand-divider py-3.5 px-4'
+              : 'bg-[#EDDDE9] border-b brand-divider'
         } ${isPortraitRatio ? 'flex justify-center' : ''}`}
       >
         <div
           style={{ aspectRatio: ratioMeta.cssRatio }}
-          className={`relative overflow-hidden bg-slate-200/50 group ${
+          className={`relative overflow-hidden bg-[#E3CDD9] group ${
             isPortraitRatio
               ? isFocused
-                ? 'max-h-[540px] w-auto max-w-full rounded-[14px]'
-                : 'max-h-[328px] w-auto max-w-full rounded-[14px] shadow-[0_12px_28px_-14px_rgba(15,23,42,0.35)] ring-1 ring-white/75'
+                ? 'max-h-[540px] w-auto max-w-full rounded-lg'
+                : 'max-h-[328px] w-auto max-w-full rounded-xl shadow-[0_10px_24px_-12px_rgba(14,16,61,0.3)] ring-1 ring-[#FAF2F8]'
               : 'w-full'
           }`}
         >
           {post.imageStatus === 'loading' || isGeneratingPost ? (
-            <div className="absolute inset-0 flex flex-col items-center justify-center gap-2 bg-white/45 backdrop-blur-sm animate-pulse p-4 text-center">
-              <Loader2 className="w-5 h-5 text-blue-700 animate-spin" aria-hidden="true" />
-              <span className="font-mono text-[11px] tabular-nums text-slate-700">
+            <div className="absolute inset-0 flex flex-col items-center justify-center gap-2.5 bg-[#FAF2F8]/90 animate-pulse p-5 text-center">
+              <Loader2 className="w-5 h-5 text-[#69306D] animate-spin" aria-hidden="true" />
+              <span className="font-mono text-xs tabular-nums font-medium text-[#0E103D]">
                 Rendering {post.aspectRatio} · {post.imageSize}
               </span>
             </div>
@@ -182,21 +183,22 @@ export function PlatformCard({
                 type="button"
                 onClick={onInspectVisual}
                 aria-label={`Inspect ${spec.name} visual fullscreen`}
-                className="absolute bottom-3 right-3 inline-flex items-center gap-1.5 px-3 py-1.5 rounded-full bg-slate-950/65 hover:bg-slate-950/85 backdrop-blur-md border border-white/25 text-white text-[11px] font-medium shadow-lg opacity-0 group-hover:opacity-100 focus-visible:opacity-100 transition-opacity duration-150 cursor-pointer focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-white"
+                title={`Inspect ${spec.name} visual fullscreen`}
+                className="absolute bottom-3 right-3 min-h-[38px] inline-flex items-center gap-1.5 px-3 py-1.5 rounded-xl bg-[#0E103D]/88 hover:bg-[#69306D] border border-[#F2D7EE]/35 text-[#FAF2F8] text-xs font-semibold shadow-md transition-colors cursor-pointer"
               >
                 <ZoomIn className="w-3.5 h-3.5" aria-hidden="true" />
-                Inspect
+                <span>Inspect</span>
               </button>
             </>
           ) : (
-            <div className="absolute inset-0 flex flex-col items-center justify-center p-5 text-center bg-gradient-to-br from-white/70 via-blue-50/40 to-slate-200/50">
-              <ImageIcon className="w-6 h-6 text-slate-500 mb-2" aria-hidden="true" />
-              <p className="text-xs font-medium text-slate-800">
+            <div className="absolute inset-0 flex flex-col items-center justify-center p-6 text-center bg-[#EDDDE9]">
+              <ImageIcon className="w-6 h-6 text-[#69306D] mb-2" aria-hidden="true" />
+              <p className="text-sm font-semibold text-[#0E103D]">
                 {post.imageStatus === 'error'
                   ? 'Visual could not be generated'
                   : 'Visual ready to render'}
               </p>
-              <p className="mt-1 font-mono text-[11px] tabular-nums text-slate-600">
+              <p className="mt-1 font-mono text-xs tabular-nums text-[#3A2A54]">
                 {ratioMeta.label} · {post.imageSize}
               </p>
             </div>
@@ -204,21 +206,21 @@ export function PlatformCard({
         </div>
       </div>
 
-      {/* Inline image error if upstream API failed */}
+      {/* Inline Image Error */}
       {post.imageStatus === 'error' && post.imageError && (
         <div
           role="alert"
           className={`${
             isFocused ? '' : 'mx-5'
-          } rounded-[14px] border border-red-300/70 bg-red-50/80 backdrop-blur-sm px-3 py-2.5 text-xs text-red-900 flex items-start gap-2`}
+          } rounded-xl border border-[#69306D] bg-[#F2D7EE] px-4 py-3 text-xs text-[#0E103D] flex items-start gap-2.5`}
         >
-          <AlertCircle className="w-4 h-4 text-red-600 shrink-0 mt-0.5" aria-hidden="true" />
-          <div className="space-y-1 flex-1">
-            <p className="leading-relaxed">{post.imageError}</p>
+          <AlertCircle className="w-4 h-4 text-[#69306D] shrink-0 mt-0.5" aria-hidden="true" />
+          <div className="space-y-1.5 flex-1">
+            <p className="leading-relaxed font-medium">{post.imageError}</p>
             <button
               type="button"
               onClick={onRegenerateImage}
-              className="font-semibold text-red-800 hover:text-red-950 underline underline-offset-2 cursor-pointer"
+              className="font-bold text-[#69306D] hover:text-[#0E103D] underline underline-offset-4 cursor-pointer"
             >
               Retry visual
             </button>
@@ -226,10 +228,10 @@ export function PlatformCard({
         </div>
       )}
 
-      {/* Clean Single-Row Liquid Glass Visual Control Strip */}
+      {/* Ergonomic Single-Row Visual Toolbar */}
       <div
         className={`${
-          isFocused ? '' : 'px-5'
+          isFocused ? '' : 'px-4 sm:px-5'
         } flex items-center justify-between gap-1.5 text-xs`}
       >
         <div className="flex items-center gap-1.5 shrink-0">
@@ -242,7 +244,7 @@ export function PlatformCard({
             onChange={(e) =>
               onChangeAspectRatio(e.target.value as AspectRatioOption)
             }
-            className="liquid-glass-well rounded-full px-2.5 py-1 font-mono text-[11px] tabular-nums text-slate-900"
+            className="brand-input min-h-[40px] rounded-xl px-2 py-1.5 font-mono text-xs tabular-nums font-medium text-[#0E103D]"
           >
             {ALL_ASPECT_RATIOS.map((ratio) => (
               <option key={ratio} value={ratio}>
@@ -250,9 +252,11 @@ export function PlatformCard({
               </option>
             ))}
           </select>
-          <span className="font-mono text-[11px] tabular-nums text-slate-500">
-            {post.imageSize}
-          </span>
+          {isFocused && (
+            <span className="font-mono text-xs tabular-nums text-[#3A2A54]">
+              {post.imageSize}
+            </span>
+          )}
         </div>
 
         <div className="flex items-center gap-1 shrink-0">
@@ -260,62 +264,62 @@ export function PlatformCard({
             type="button"
             aria-expanded={promptOpen}
             onClick={() => setPromptOpen((prev) => !prev)}
-            className="inline-flex items-center gap-0.5 px-2.5 py-1 text-xs font-medium text-slate-700 hover:text-slate-950 rounded-full hover:bg-white/70 transition-colors whitespace-nowrap cursor-pointer"
+            className="btn-ghost min-h-[40px] inline-flex items-center gap-0.5 px-2 py-1.5 text-xs font-semibold rounded-xl whitespace-nowrap cursor-pointer"
           >
-            Prompt
+            <span>Prompt</span>
             {promptOpen ? (
-              <ChevronUp className="w-3 h-3" aria-hidden="true" />
+              <ChevronUp className="w-3.5 h-3.5 text-[#69306D]" aria-hidden="true" />
             ) : (
-              <ChevronDown className="w-3 h-3" aria-hidden="true" />
+              <ChevronDown className="w-3.5 h-3.5 text-[#69306D]" aria-hidden="true" />
             )}
           </button>
 
           <button
             type="button"
             onClick={onRegenerateImage}
-            onPointerMove={handleLiquidPointerMove}
             disabled={post.imageStatus === 'loading' || isGeneratingPost}
             aria-label={`Regenerate ${spec.name} visual`}
-            className="liquid-glass-btn inline-flex items-center gap-1 px-2.5 py-1 text-xs font-medium text-slate-900 rounded-full disabled:opacity-50 cursor-pointer disabled:cursor-not-allowed whitespace-nowrap"
+            title={`Regenerate ${spec.name} visual`}
+            className="btn-secondary min-h-[40px] inline-flex items-center gap-1 px-2.5 py-1.5 text-xs font-semibold rounded-xl whitespace-nowrap cursor-pointer"
           >
             <RefreshCw
-              className={`w-3 h-3 ${post.imageStatus === 'loading' ? 'animate-spin' : ''}`}
+              className={`w-3.5 h-3.5 text-[#69306D] ${post.imageStatus === 'loading' ? 'animate-spin' : ''}`}
               aria-hidden="true"
             />
-            Render
+            <span>Render</span>
           </button>
 
           {post.imageUrl && !imageLoadFailed && (
             <button
               type="button"
               onClick={handleDownloadImage}
-              onPointerMove={handleLiquidPointerMove}
               aria-label={`Download ${spec.name} image`}
-              className="liquid-glass-btn p-1.5 text-slate-700 hover:text-slate-950 rounded-full cursor-pointer"
+              title={`Download ${spec.name} image`}
+              className="btn-ghost min-w-[40px] min-h-[40px] inline-flex items-center justify-center rounded-xl cursor-pointer"
             >
-              <Download className="w-3.5 h-3.5" aria-hidden="true" />
+              <Download className="w-4 h-4 text-[#0E103D]" aria-hidden="true" />
             </button>
           )}
         </div>
       </div>
 
-      {/* Real-time visual grounding references if returned by image search */}
+      {/* Real-time visual grounding references */}
       {post.visualSources && post.visualSources.length > 0 && (
         <div
           className={`${
             isFocused ? '' : 'px-5'
-          } text-[11px] text-slate-600 flex flex-wrap items-center gap-x-2.5 gap-y-1`}
+          } text-xs text-[#3A2A54] flex flex-wrap items-center gap-x-3 gap-y-1`}
         >
-          <span className="font-semibold text-slate-700">Visual refs:</span>
+          <span className="font-semibold text-[#0E103D]">Visual refs:</span>
           {post.visualSources.slice(0, 3).map((src) => (
             <a
               key={src.uri}
               href={src.uri}
               target="_blank"
               rel="noopener noreferrer"
-              className="inline-flex items-center gap-1 font-medium text-blue-700 hover:text-blue-900 underline underline-offset-2 decoration-blue-300"
+              className="inline-flex items-center gap-1 font-semibold text-[#69306D] hover:text-[#0E103D] underline underline-offset-4 decoration-[#A5668B]"
             >
-              <ExternalLink className="w-2.5 h-2.5 shrink-0" aria-hidden="true" />
+              <ExternalLink className="w-3 h-3 shrink-0" aria-hidden="true" />
               <span>{extractSourceHostname(src.uri)}</span>
             </a>
           ))}
@@ -324,19 +328,19 @@ export function PlatformCard({
 
       {/* Collapsible Art Direction Prompt Editor */}
       {promptOpen && (
-        <div className={`${isFocused ? '' : 'px-5'} pt-2 border-t liquid-divider space-y-1.5`}>
+        <div className={`${isFocused ? '' : 'px-5'} pt-3 border-t brand-divider space-y-2`}>
           <label
             htmlFor={`image-prompt-${post.platform}`}
-            className="block text-[11px] font-medium text-slate-700"
+            className="block text-xs font-semibold text-[#0E103D]"
           >
-            Visual art-direction prompt (edit and click Render)
+            Visual art-direction prompt (edit and select Render)
           </label>
           <textarea
             id={`image-prompt-${post.platform}`}
             rows={3}
             value={post.imagePrompt}
             onChange={(e) => onUpdateImagePrompt(e.target.value)}
-            className="liquid-glass-well w-full rounded-[12px] px-3 py-2 text-xs text-slate-900 leading-relaxed"
+            className="brand-input w-full rounded-xl px-3.5 py-2.5 text-xs text-[#0E103D] leading-relaxed"
           />
         </div>
       )}
@@ -349,52 +353,74 @@ export function PlatformCard({
     .filter(Boolean);
 
   const copySection = (
-    <div className="flex flex-col flex-1 space-y-4">
-      {/* Mode Switcher: Sliding Glass Capsule for Preview vs Edit */}
-      <div className="flex items-center justify-between gap-2">
-        <GlassSegmentedTrack
-          ariaLabel={`${spec.name} view mode`}
-          size="sm"
-          options={[
-            { id: 'preview', label: 'Preview' },
-            { id: 'edit', label: 'Edit' },
-          ]}
-          value={editorMode}
-          onChange={setEditorMode}
-        />
+    <div className="flex flex-col flex-1 space-y-5">
+      {/* Mode Switcher & Character Counter */}
+      <div className="flex items-center justify-between gap-3">
+        <div
+          role="group"
+          aria-label={`${spec.name} view mode`}
+          className="brand-track inline-flex items-center gap-1 p-1 rounded-xl"
+        >
+          {(
+            [
+              { id: 'preview', label: 'Preview' },
+              { id: 'edit', label: 'Edit' },
+            ] as const
+          ).map((mode) => {
+            const isSelected = editorMode === mode.id;
+            return (
+              <button
+                key={mode.id}
+                type="button"
+                aria-pressed={isSelected}
+                onClick={() => setEditorMode(mode.id)}
+                className={`min-h-[36px] px-3.5 rounded-lg text-xs font-semibold whitespace-nowrap cursor-pointer transition-colors ${
+                  isSelected ? 'brand-segment-active' : 'brand-segment-idle'
+                }`}
+              >
+                {mode.label}
+              </button>
+            );
+          })}
+        </div>
 
-        <span
-          className={`font-mono text-[11px] tabular-nums ${
+        <div
+          className={`font-mono text-xs tabular-nums inline-flex items-center gap-1.5 ${
             metrics.isOverLimit
-              ? 'text-red-700 font-semibold'
-              : 'text-slate-600'
+              ? 'text-[#69306D] font-bold'
+              : 'text-[#3A2A54] font-medium'
           }`}
         >
-          {metrics.charCount} / {metrics.charLimit}
-        </span>
+          {metrics.isOverLimit && (
+            <AlertTriangle className="w-3.5 h-3.5 text-[#69306D]" aria-hidden="true" />
+          )}
+          <span>
+            {metrics.charCount} / {metrics.charLimit}
+          </span>
+        </div>
       </div>
 
       {isGeneratingPost ? (
         <div className="space-y-3 py-2 animate-pulse" aria-busy="true">
-          <div className="h-4 w-3/4 bg-slate-300/60 rounded-full" />
-          <div className="h-3 w-full bg-slate-200/70 rounded-full" />
-          <div className="h-3 w-11/12 bg-slate-200/70 rounded-full" />
-          <div className="h-3 w-5/6 bg-slate-200/70 rounded-full" />
-          <div className="h-3 w-2/3 bg-slate-200/70 rounded-full" />
+          <div className="h-4 w-3/4 bg-[#D3BCC0] rounded-lg" />
+          <div className="h-3.5 w-full bg-[#E3CDD9] rounded-lg" />
+          <div className="h-3.5 w-11/12 bg-[#E3CDD9] rounded-lg" />
+          <div className="h-3.5 w-5/6 bg-[#E3CDD9] rounded-lg" />
+          <div className="h-3.5 w-2/3 bg-[#E3CDD9] rounded-lg" />
         </div>
       ) : editorMode === 'preview' ? (
-        <div className="space-y-3.5">
+        <div className="space-y-4 max-w-[65ch]">
           {post.platform === 'linkedin' && post.headline && (
-            <h3 className="font-display text-[15px] font-semibold text-slate-950 leading-snug">
+            <h3 className="font-display text-base font-bold text-[#0E103D] leading-snug text-balance">
               {post.headline}
             </h3>
           )}
 
           <div
-            className={`space-y-2.5 ${
+            className={`space-y-3 ${
               post.platform === 'twitter'
-                ? 'text-[15px] leading-[1.55] text-slate-950 font-normal'
-                : 'text-[13.5px] leading-[1.65] text-slate-900'
+                ? 'text-[15.5px] leading-[1.6] text-[#0E103D] font-normal'
+                : 'text-[14.5px] leading-[1.68] text-[#0E103D]'
             }`}
           >
             {paragraphs.map((para, i) => (
@@ -405,22 +431,27 @@ export function PlatformCard({
           </div>
 
           {post.platform === 'twitter' && (
-            <div className="space-y-1 pt-1">
-              <div className="h-1.5 w-full rounded-full liquid-glass-track overflow-hidden">
+            <div className="space-y-2 pt-1">
+              <div
+                className="h-2 w-full rounded-full bg-[#E3CDD9] overflow-hidden"
+                aria-hidden="true"
+              >
                 <div
                   className={`h-full rounded-full transition-all duration-150 ${
-                    metrics.isOverLimit
-                      ? 'bg-red-600'
-                      : metrics.utilizationPercent > 85
-                        ? 'bg-amber-600'
-                        : 'bg-blue-700'
+                    metrics.isOverLimit ? 'bg-[#0E103D]' : 'bg-[#69306D]'
                   }`}
                   style={{ width: `${metrics.utilizationPercent}%` }}
                 />
               </div>
               {metrics.isOverLimit && (
-                <p className="text-xs font-semibold text-red-700">
-                  Exceeds 280-character X limit by {metrics.charCount - metrics.charLimit} characters.
+                <p
+                  role="alert"
+                  className="text-xs font-semibold text-[#0E103D] flex items-center gap-1.5"
+                >
+                  <AlertTriangle className="w-3.5 h-3.5 text-[#69306D] shrink-0" aria-hidden="true" />
+                  <span>
+                    Exceeds 280-character X limit by {metrics.charCount - metrics.charLimit} characters.
+                  </span>
                 </p>
               )}
             </div>
@@ -428,15 +459,18 @@ export function PlatformCard({
 
           {(post.platform === 'instagram' || post.platform === 'linkedin') &&
             post.hashtags.length > 0 && (
-              <p className="pt-2.5 border-t liquid-divider text-xs font-medium text-blue-800 leading-relaxed">
+              <p className="pt-3 border-t brand-divider text-xs font-semibold text-[#69306D] leading-relaxed">
                 {post.hashtags.join(' ')}
               </p>
             )}
         </div>
       ) : (
-        <>
+        <div className="space-y-4">
           <div className="space-y-1.5">
-            <label htmlFor={`post-body-${post.platform}`} className="sr-only">
+            <label
+              htmlFor={`post-body-${post.platform}`}
+              className="block text-xs font-semibold text-[#0E103D]"
+            >
               {spec.name} post copy
             </label>
             <textarea
@@ -444,52 +478,57 @@ export function PlatformCard({
               rows={
                 isFocused
                   ? post.platform === 'linkedin'
-                    ? 14
+                    ? 13
                     : 8
                   : post.platform === 'linkedin'
-                    ? 11
+                    ? 10
                     : post.platform === 'twitter'
                       ? 6
                       : 8
               }
               value={post.body}
               onChange={(e) => onUpdateBody(e.target.value)}
-              className="liquid-glass-well w-full rounded-[14px] px-3 py-2.5 text-[13.5px] text-slate-950 leading-relaxed resize-y"
+              className="brand-input w-full rounded-xl px-3.5 py-3 text-sm text-[#0E103D] leading-relaxed resize-y"
             />
           </div>
 
           {post.platform === 'twitter' && (
-            <div className="space-y-1">
-              <div className="h-1.5 w-full rounded-full liquid-glass-track overflow-hidden">
+            <div className="space-y-2">
+              <div
+                className="h-2 w-full rounded-full bg-[#E3CDD9] overflow-hidden"
+                aria-hidden="true"
+              >
                 <div
                   className={`h-full rounded-full transition-all duration-150 ${
-                    metrics.isOverLimit
-                      ? 'bg-red-600'
-                      : metrics.utilizationPercent > 85
-                        ? 'bg-amber-600'
-                        : 'bg-blue-700'
+                    metrics.isOverLimit ? 'bg-[#0E103D]' : 'bg-[#69306D]'
                   }`}
                   style={{ width: `${metrics.utilizationPercent}%` }}
                 />
               </div>
               {metrics.isOverLimit && (
-                <p className="text-xs font-semibold text-red-700">
-                  Exceeds 280-character X limit by {metrics.charCount - metrics.charLimit} characters.
+                <p
+                  role="alert"
+                  className="text-xs font-semibold text-[#0E103D] flex items-center gap-1.5"
+                >
+                  <AlertTriangle className="w-3.5 h-3.5 text-[#69306D] shrink-0" aria-hidden="true" />
+                  <span>
+                    Exceeds 280-character X limit by {metrics.charCount - metrics.charLimit} characters.
+                  </span>
                 </p>
               )}
             </div>
           )}
 
           {(post.platform === 'instagram' || post.platform === 'linkedin') && (
-            <div className="space-y-1.5 pt-1">
+            <div className="space-y-1.5">
               <div className="flex items-center justify-between">
                 <label
                   htmlFor={`hashtags-${post.platform}`}
-                  className="text-[11px] font-medium text-slate-600"
+                  className="text-xs font-semibold text-[#0E103D]"
                 >
                   Hashtags
                 </label>
-                <span className="font-mono text-[11px] tabular-nums text-slate-500">
+                <span className="font-mono text-xs tabular-nums text-[#3A2A54]">
                   {metrics.hashtagCount} tags
                 </span>
               </div>
@@ -502,80 +541,90 @@ export function PlatformCard({
                   onUpdateHashtags(parseHashtagInput(e.target.value));
                 }}
                 placeholder="#Design #Launch #Editorial"
-                className="liquid-glass-well w-full rounded-[12px] px-3 py-1.5 text-xs font-medium text-blue-900 placeholder:text-slate-500"
+                className="brand-input w-full min-h-[42px] rounded-xl px-3.5 py-2 text-xs font-semibold text-[#69306D]"
               />
             </div>
           )}
-        </>
+        </div>
       )}
 
-      {/* Gemini Editorial Note (when analyzed or fact-checked) */}
+      {/* Editorial Note */}
       {post.analysisNote && !isGeneratingPost && (
-        <div className="liquid-glass-well rounded-[14px] px-3.5 py-2.5 text-xs text-slate-800 flex items-start justify-between gap-2">
-          <div className="space-y-0.5">
-            <span className="font-semibold text-slate-950">Editorial note</span>
-            <p className="leading-relaxed">{post.analysisNote}</p>
+        <div className="brand-subpanel rounded-xl px-4 py-3 text-xs text-[#0E103D] flex items-start justify-between gap-3">
+          <div className="space-y-1">
+            <span className="font-bold text-[#69306D]">Editorial note</span>
+            <p className="leading-relaxed text-[#0E103D]">{post.analysisNote}</p>
           </div>
           <button
             type="button"
             onClick={onDismissAnalysis}
             aria-label={`Dismiss editorial note for ${spec.name}`}
-            className="p-0.5 text-slate-500 hover:text-slate-900 cursor-pointer shrink-0"
+            title="Dismiss editorial note"
+            className="btn-ghost min-w-[36px] min-h-[36px] inline-flex items-center justify-center rounded-lg shrink-0 cursor-pointer"
           >
-            <X className="w-3.5 h-3.5" aria-hidden="true" />
+            <X className="w-4 h-4 text-[#0E103D]" aria-hidden="true" />
           </button>
         </div>
       )}
 
-      {/* Gemini Content Intelligence & Copy Footer */}
-      <div className="mt-auto pt-3.5 border-t liquid-divider space-y-2.5">
-        <div className="flex flex-wrap items-center gap-1.5">
-          {QUICK_REFINEMENTS.map((action) => (
-            <button
-              key={action.id}
-              type="button"
-              disabled={isRefining || isGeneratingPost}
-              onClick={() => onRefinePost(action.instruction, action.mode)}
-              onPointerMove={handleLiquidPointerMove}
-              className="liquid-glass-btn px-2.5 py-1 text-[11px] font-medium text-slate-800 hover:text-slate-950 rounded-full disabled:opacity-50 whitespace-nowrap cursor-pointer disabled:cursor-not-allowed"
-            >
-              {action.label}
-            </button>
-          ))}
-          {isRefining && (
-            <span className="inline-flex items-center gap-1 text-xs font-medium text-blue-700 ml-1">
-              <Loader2 className="w-3 h-3 animate-spin" aria-hidden="true" />
-              Refining...
-            </span>
-          )}
+      {/* Refinement Actions & Copy Footer */}
+      <div className="mt-auto pt-4 border-t brand-divider space-y-3.5">
+        <div className="space-y-2">
+          <span className="block text-xs font-semibold text-[#3A2A54]">
+            Quick refinements
+          </span>
+          <div className="flex flex-wrap items-center gap-2">
+            {QUICK_REFINEMENTS.map((action) => (
+              <button
+                key={action.id}
+                type="button"
+                disabled={isRefining || isGeneratingPost}
+                onClick={() => onRefinePost(action.instruction, action.mode)}
+                className="btn-ghost min-h-[38px] px-3 py-1.5 text-xs font-semibold text-[#0E103D] border-[#D3BCC0] bg-[#F6E9F4] rounded-xl whitespace-nowrap cursor-pointer"
+              >
+                {action.label}
+              </button>
+            ))}
+            {isRefining && (
+              <span className="inline-flex items-center gap-1.5 text-xs font-semibold text-[#69306D]">
+                <Loader2 className="w-3.5 h-3.5 animate-spin" aria-hidden="true" />
+                <span>Refining...</span>
+              </span>
+            )}
+          </div>
         </div>
 
-        <form onSubmit={handleCustomRefineSubmit} className="flex items-center gap-1.5">
-          <label htmlFor={`refine-input-${post.platform}`} className="sr-only">
-            Custom edit instruction for {spec.name}
-          </label>
-          <input
-            id={`refine-input-${post.platform}`}
-            type="text"
-            value={customInstruction}
-            onChange={(e) => setCustomInstruction(e.target.value)}
-            disabled={isRefining || isGeneratingPost}
-            placeholder="Ask Gemini to edit this draft..."
-            className="liquid-glass-well flex-1 min-w-0 rounded-full px-3 py-1.5 text-xs text-slate-900 placeholder:text-slate-500"
-          />
-          <button
-            type="submit"
-            disabled={!customInstruction.trim() || isRefining || isGeneratingPost}
-            onPointerMove={handleLiquidPointerMove}
-            aria-label={`Apply custom edit to ${spec.name}`}
-            className="liquid-glass-btn p-2 rounded-full text-slate-800 hover:text-blue-700 disabled:opacity-40 cursor-pointer disabled:cursor-not-allowed"
+        <form onSubmit={handleCustomRefineSubmit} className="space-y-1.5">
+          <label
+            htmlFor={`refine-input-${post.platform}`}
+            className="block text-xs font-semibold text-[#0E103D]"
           >
-            <Send className="w-3.5 h-3.5" aria-hidden="true" />
-          </button>
+            Custom edit instruction
+          </label>
+          <div className="flex items-center gap-2">
+            <input
+              id={`refine-input-${post.platform}`}
+              type="text"
+              value={customInstruction}
+              onChange={(e) => setCustomInstruction(e.target.value)}
+              disabled={isRefining || isGeneratingPost}
+              placeholder="e.g., Make the closing question more direct..."
+              className="brand-input flex-1 min-w-0 min-h-[40px] rounded-xl px-3.5 py-2 text-xs text-[#0E103D]"
+            />
+            <button
+              type="submit"
+              disabled={!customInstruction.trim() || isRefining || isGeneratingPost}
+              aria-label={`Apply custom edit to ${spec.name}`}
+              title={`Apply custom edit to ${spec.name}`}
+              className="btn-secondary min-w-[40px] min-h-[40px] inline-flex items-center justify-center rounded-xl shrink-0 cursor-pointer"
+            >
+              <Send className="w-4 h-4 text-[#69306D]" aria-hidden="true" />
+            </button>
+          </div>
         </form>
 
-        <div className="flex items-center justify-between pt-1">
-          <div className="text-[11px] text-slate-600 font-mono tabular-nums flex items-center gap-1.5">
+        <div className="flex items-center justify-between gap-3 pt-2 border-t brand-divider">
+          <div className="text-xs text-[#3A2A54] font-mono tabular-nums flex items-center gap-2">
             <span>{metrics.wordCount} words</span>
             <span aria-hidden="true">·</span>
             <span>~{metrics.readingSeconds}s read</span>
@@ -584,19 +633,18 @@ export function PlatformCard({
           <button
             type="button"
             onClick={handleCopy}
-            onPointerMove={handleLiquidPointerMove}
             disabled={isGeneratingPost}
-            className="liquid-glass-btn inline-flex items-center gap-1.5 px-3.5 py-1.5 text-xs font-semibold text-slate-950 rounded-full whitespace-nowrap cursor-pointer focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-blue-700"
+            className="btn-secondary min-h-[40px] inline-flex items-center gap-1.5 px-4 py-2 text-xs font-semibold rounded-xl whitespace-nowrap cursor-pointer"
           >
             {copied ? (
               <>
-                <Check className="w-3.5 h-3.5 text-emerald-700" aria-hidden="true" />
-                Copied
+                <Check className="w-4 h-4 text-[#69306D]" aria-hidden="true" />
+                <span>Copied</span>
               </>
             ) : (
               <>
-                <Copy className="w-3.5 h-3.5 text-slate-600" aria-hidden="true" />
-                Copy Post
+                <Copy className="w-4 h-4 text-[#69306D]" aria-hidden="true" />
+                <span>Copy Post</span>
               </>
             )}
           </button>
@@ -608,48 +656,43 @@ export function PlatformCard({
   return (
     <article
       data-testid={`platform-card-${post.platform}`}
-      onPointerMove={handleLiquidPointerMove}
-      className="liquid-glass-card rounded-[24px] flex flex-col overflow-hidden"
+      className="brand-card rounded-2xl flex flex-col overflow-hidden"
     >
       {/* Card Header */}
-      <div className="relative z-10 px-5 py-3.5 border-b liquid-divider flex items-center justify-between gap-3">
-        <div className="min-w-0">
-          <h2 className="font-display text-[15px] font-semibold text-slate-950 truncate">
+      <div className="px-5 py-4 border-b brand-divider flex items-center justify-between gap-3">
+        <div className="min-w-0 space-y-0.5">
+          <h2 className="font-display text-base font-bold text-[#0E103D] truncate">
             {spec.name}
           </h2>
-          <p className="text-xs text-slate-600 flex items-center gap-1.5 truncate">
+          <p className="text-xs text-[#3A2A54] flex items-center gap-1.5 truncate">
             <span>{spec.formatLabel}</span>
             <span aria-hidden="true">·</span>
-            <span className="font-mono text-[11px] tabular-nums">
-              {post.aspectRatio}
-            </span>
+            <span className="font-mono tabular-nums">{post.aspectRatio}</span>
           </p>
         </div>
 
-        <div className="flex items-center gap-1.5 shrink-0">
-          {!isFocused && onFocusPlatform && (
-            <button
-              type="button"
-              onClick={onFocusPlatform}
-              onPointerMove={handleLiquidPointerMove}
-              aria-label={`Focus ${spec.name} editor`}
-              className="liquid-glass-btn p-1.5 text-slate-600 hover:text-slate-950 rounded-full cursor-pointer"
-            >
-              <Maximize2 className="w-3.5 h-3.5" aria-hidden="true" />
-            </button>
-          )}
-        </div>
+        {!isFocused && onFocusPlatform && (
+          <button
+            type="button"
+            onClick={onFocusPlatform}
+            aria-label={`Focus ${spec.name} editor`}
+            title={`Focus ${spec.name} editor`}
+            className="btn-ghost min-w-[40px] min-h-[40px] inline-flex items-center justify-center rounded-xl shrink-0 cursor-pointer"
+          >
+            <Maximize2 className="w-4 h-4 text-[#69306D]" aria-hidden="true" />
+          </button>
+        )}
       </div>
 
-      {/* Card Body: 2-column split when focused, full-bleed editorial column in 3-up spread */}
+      {/* Card Body */}
       {isFocused ? (
-        <div className="relative z-10 p-5 sm:p-6 grid grid-cols-1 xl:grid-cols-12 gap-6 items-start">
+        <div className="p-5 sm:p-6 grid grid-cols-1 xl:grid-cols-12 gap-6 lg:gap-8 items-start">
           <div className="xl:col-span-5">{visualSection}</div>
           <div className="xl:col-span-7 flex flex-col h-full">{copySection}</div>
         </div>
       ) : (
-        <div className="relative z-10 flex-1 flex flex-col">
-          <div className="pb-4 border-b liquid-divider">{visualSection}</div>
+        <div className="flex-1 flex flex-col">
+          <div className="pb-4 border-b brand-divider">{visualSection}</div>
           <div className="p-5 flex-1 flex flex-col">{copySection}</div>
         </div>
       )}
