@@ -1,8 +1,8 @@
 import 'dotenv/config';
 import express from 'express';
+import fs from 'fs';
 import path from 'path';
 import { fileURLToPath } from 'url';
-import { createServer as createViteServer } from 'vite';
 import {
   DEFAULT_PLATFORM_RATIOS,
   isValidAspectRatio,
@@ -22,11 +22,15 @@ import type { AspectRatioOption, PlatformId } from './src/types/campaign.ts';
 const __filename = fileURLToPath(import.meta.url);
 const __dirname = path.dirname(__filename);
 
-const PORT = 3000;
+const PORT = Number(process.env.PORT) || 3000;
 
 async function startServer() {
   const app = express();
   app.use(express.json({ limit: '4mb' }));
+
+  app.get('/api/health', (_req, res) => {
+    res.json({ ok: true });
+  });
 
   app.post('/api/generate-posts', async (req, res) => {
     try {
@@ -143,14 +147,21 @@ async function startServer() {
     }
   });
 
-  if (process.env.NODE_ENV !== 'production') {
+  const distPath = path.resolve(__dirname, 'dist');
+  const isProduction =
+    process.env.NODE_ENV === 'production' ||
+    (process.env.NODE_ENV !== 'development' &&
+      !process.env.DISABLE_HMR &&
+      fs.existsSync(path.join(distPath, 'index.html')));
+
+  if (!isProduction) {
+    const { createServer: createViteServer } = await import('vite');
     const vite = await createViteServer({
       server: { middlewareMode: true },
       appType: 'spa',
     });
     app.use(vite.middlewares);
   } else {
-    const distPath = path.resolve(__dirname, 'dist');
     app.use(express.static(distPath));
     app.get('*', (_req, res) => {
       res.sendFile(path.join(distPath, 'index.html'));
